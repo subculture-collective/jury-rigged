@@ -6,9 +6,12 @@
     "scripts": {
         "dev": "tsx watch src/server.ts",
         "dev:dashboard": "vite",
+        "dev:app": "vite --config vite.app.config.ts",
         "lint": "tsc --noEmit",
-        "build": "tsc -p tsconfig.json && vite build",
+        "lint:app": "tsc -p app/tsconfig.json --noEmit",
+        "build": "tsc -p tsconfig.json && tsc -p app/tsconfig.json --noEmit && vite build && vite build --config vite.app.config.ts",
         "build:dashboard": "vite build",
+        "build:app": "vite build --config vite.app.config.ts",
         "test": "node --import tsx --test 'src/**/*.test.ts'",
         "test:ops": "node --import tsx --test src/ops/ops-config.test.ts",
         "smoke:staging": "bash ./scripts/staging-smoke.sh",

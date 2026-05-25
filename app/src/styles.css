@@ -1,0 +1,98 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 210 42% 7%;
+  --surface: 212 38% 10%;
+  --surface-2: 212 34% 14%;
+  --border: 205 28% 23%;
+  --text: 205 40% 92%;
+  --muted: 207 18% 64%;
+  --cyan: 190 92% 58%;
+  --purple: 260 75% 62%;
+  --red: 3 89% 59%;
+  --gold: 38 68% 60%;
+  --green: 145 64% 50%;
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  position: relative;
+  background:
+    radial-gradient(circle at 15% 10%, hsl(var(--purple) / 0.14), transparent 30%),
+    radial-gradient(circle at 85% 0%, hsl(var(--cyan) / 0.12), transparent 24%),
+    radial-gradient(circle at 75% 80%, hsl(var(--gold) / 0.08), transparent 28%),
+    linear-gradient(180deg, hsl(var(--bg)) 0%, hsl(211 41% 5%) 100%);
+  color: hsl(var(--text));
+  font-family:
+    'Inter',
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+}
+
+body::before {
+  content: '';
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 100% 5px;
+  mix-blend-mode: soft-light;
+  opacity: 0.1;
+}
+
+::selection {
+  background: hsl(var(--cyan) / 0.3);
+  color: hsl(var(--text));
+}
+
+h1,
+h2,
+h3,
+h4,
+.font-display {
+  font-family:
+    'Space Grotesk',
+    'Sora',
+    'Archivo',
+    'Inter',
+    system-ui,
+    sans-serif;
+}
+
+.font-monoish {
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

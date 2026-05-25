@@ -2,15 +2,14 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
+    root: 'app',
     plugins: [react()],
-    root: 'dashboard',
-    base: '/operator/',
     build: {
-        outDir: '../dist/dashboard',
+        outDir: '../dist/app',
         emptyOutDir: true,
     },
     server: {
-        port: 3001,
+        port: 3002,
         proxy: {
             '/api': {
                 target: 'http://localhost:3000',

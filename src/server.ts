@@ -613,13 +613,13 @@ const audienceInteractionLimiter = rateLimit({
 
 function registerStaticAndSpaRoutes(
     app: ExpressApp,
-    dirs: { publicDir: string; dashboardDir: string },
+    dirs: { appDir: string; dashboardDir: string },
 ): void {
     // Serve operator dashboard
     app.use('/operator', express.static(dirs.dashboardDir));
 
-    // Serve main public app
-    app.use(express.static(dirs.publicDir));
+    // Serve fresh public app
+    app.use(express.static(dirs.appDir));
 
     // Catch-all for operator dashboard (SPA routing)
     app.get('/operator/*', (_req, res) => {
@@ -639,7 +639,18 @@ function registerStaticAndSpaRoutes(
 
     // Catch-all for main app (SPA routing)
     app.get('*', spaIndexLimiter, (_req, res) => {
-        res.sendFile(path.join(dirs.publicDir, 'index.html'));
+        const indexPath = path.join(dirs.appDir, 'index.html');
+        res.sendFile(indexPath, err => {
+            if (err) {
+                if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+                    res.status(404).send(
+                        'Public app not found. Run `npm run build:app` first.',
+                    );
+                } else {
+                    res.status(500).send('Failed to load public app.');
+                }
+            }
+        });
     });
 }
 
@@ -966,7 +977,7 @@ export async function createServerApp(
 
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
-    const publicDir = path.resolve(__dirname, '../public');
+    const appDir = path.resolve(__dirname, '../dist/app');
     const dashboardDir = path.resolve(__dirname, '../dist/dashboard');
 
     const verdictWindowMs = Number.parseInt(
@@ -1037,7 +1048,7 @@ export async function createServerApp(
     });
 
     registerStaticAndSpaRoutes(app, {
-        publicDir,
+        appDir,
         dashboardDir,
     });
 

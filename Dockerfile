@@ -8,9 +8,11 @@ RUN npm ci
 
 COPY tsconfig.json ./
 COPY vite.config.ts ./
+COPY vite.app.config.ts ./
 COPY postcss.config.js ./
 COPY tailwind.config.js ./
 COPY src ./src
+COPY app ./app
 COPY dashboard ./dashboard
 COPY public ./public
 COPY db ./db
