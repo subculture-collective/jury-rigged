@@ -41,7 +41,7 @@ services:
             VERDICT_VOTE_WINDOW_MS: ${VERDICT_VOTE_WINDOW_MS:-20000}
             SENTENCE_VOTE_WINDOW_MS: ${SENTENCE_VOTE_WINDOW_MS:-20000}
         ports:
-            - '127.0.0.1:${API_HOST_PORT:-3001}:3001'
+            - '${API_BIND_ADDR:-127.0.0.1}:${API_HOST_PORT:-3001}:3001'
         networks:
             - internal
             - web
