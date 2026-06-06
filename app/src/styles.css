@@ -26,6 +26,7 @@ body,
 body {
   margin: 0;
   position: relative;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at 15% 10%, hsl(var(--purple) / 0.14), transparent 30%),
     radial-gradient(circle at 85% 0%, hsl(var(--cyan) / 0.12), transparent 24%),

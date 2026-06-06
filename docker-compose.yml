@@ -45,6 +45,7 @@ services:
         networks:
             - internal
             - web
+            - monitoring
 
 volumes:
     postgres_data:
@@ -53,3 +54,7 @@ networks:
     internal:
     web:
         driver: bridge
+
+    monitoring:
+        name: monitoring
+        external: true

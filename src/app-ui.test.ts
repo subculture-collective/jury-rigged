@@ -45,6 +45,23 @@ test('app implements the design-spec page set without old public UI', () => {
     assert.match(app, /function OperatorView/);
 });
 
+test('overlay supports live-only deep link and rotating sidebar', () => {
+    const app = readFileSync(join(srcDir, 'App.tsx'), 'utf8');
+    const data = readFileSync(join(srcDir, 'data.ts'), 'utf8');
+
+    assert.match(app, /VIEW_PARAM = 'view'/);
+    assert.match(app, /value === 'overlay'/);
+    assert.match(app, /\?view=overlay|searchParams\.set\(VIEW_PARAM, view\)/);
+    assert.match(app, /function useLiveOverlaySession/);
+    assert.match(app, /\/api\/court\/sessions/);
+    assert.match(app, /EventSource\(`\/api\/court\/sessions\/\$\{sessionId\}\/stream`\)/);
+    assert.match(app, /OVERLAY_ROTATION_MS/);
+    assert.match(app, /setInterval\(\(\) => \{/);
+    assert.match(app, /This overlay only shows live session data/);
+    assert.match(app, /No demo session/);
+    assert.match(data, /16:9 live-session frame/);
+});
+
 test('accessibility and reduced-motion affordances are present', () => {
     const components = readFileSync(join(srcDir, 'components.tsx'), 'utf8');
     const styles = readFileSync(join(srcDir, 'styles.css'), 'utf8');

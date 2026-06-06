@@ -58,7 +58,7 @@ export type VoteOption = {
 
 export const views: Array<{ key: ViewKey; label: string; note: string }> = [
   { key: 'viewer', label: 'Live Viewer', note: 'Control room + transcript' },
-  { key: 'overlay', label: 'Broadcast Overlay', note: '16:9 on-air mock' },
+  { key: 'overlay', label: 'Broadcast Overlay', note: '16:9 live-session frame' },
   { key: 'directory', label: 'Case Directory', note: 'Active docket list' },
   { key: 'details', label: 'Case Details', note: 'Evidence + timeline' },
   { key: 'voting', label: 'Jury Voting', note: 'Ballot + eligibility' },
