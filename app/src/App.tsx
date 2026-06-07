@@ -519,6 +519,12 @@ function App() {
                 </div>
                 <LivePill />
                 <span className="rounded-full border border-[hsl(var(--border))] bg-black/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-[hsl(var(--muted))]">{liveMeta.mode}</span>
+                <a
+                  href="/operator"
+                  className="rounded-full border border-[hsl(var(--cyan)/0.45)] bg-[hsl(var(--cyan)/0.12)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[hsl(var(--cyan))] transition hover:border-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.18)]"
+                >
+                  Admin console
+                </a>
               </div>
               <p className="max-w-3xl text-sm leading-6 text-[hsl(var(--muted))]">
                 A compact, cinematic legal control surface. Most screens use internal mock data; the overlay view attaches to a running live session when one exists.
