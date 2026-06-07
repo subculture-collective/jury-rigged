@@ -50,7 +50,10 @@ export function ManualControls({ sessionId }: ManualControlsProps) {
                 `/api/court/sessions/${sessionId}/phase`,
                 {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Admin-Request': '1',
+                    },
                     body: JSON.stringify({ phase: targetPhase }),
                 },
             );
@@ -77,7 +80,10 @@ export function ManualControls({ sessionId }: ManualControlsProps) {
         try {
             const response = await fetch('/api/court/sessions', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Admin-Request': '1',
+                },
                 body: JSON.stringify({ topic: 'Operator-created session' }),
             });
 

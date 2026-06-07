@@ -131,6 +131,14 @@ Copy `.env.example` and tune as needed.
 | `DATABASE_URL`       | Enables Postgres-backed durable store; omit for in-memory                                                                                           |
 | `LOG_LEVEL`          | `debug`, `info`, `warn`, `error`                                                                                                                    |
 
+### Admin auth
+
+| Variable              | Purpose                                                                                                  |
+| --------------------- | -------------------------------------------------------------------------------------------------------- |
+| `ADMIN_PASSWORD`      | Enables admin auth when set; required for `/operator`, session creation/phase control, and `/api/metrics` |
+| `ADMIN_TOKEN_SECRET`  | Secret for signing admin session cookies; use a long random value distinct from `ADMIN_PASSWORD`          |
+| `ADMIN_COOKIE_SECURE` | Set to `true` when serving over HTTPS so admin cookies are marked Secure                                  |
+
 ### Voting + moderation safety
 
 | Variable                         | Purpose                           |

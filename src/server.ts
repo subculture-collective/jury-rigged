@@ -1,6 +1,7 @@
 import 'dotenv/config';
-import express, { type Request, type Response } from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isValidAgent } from './agents.js';
@@ -66,6 +67,160 @@ const validPhases: CourtPhase[] = [
     'sentence_vote',
     'final_ruling',
 ];
+
+const ADMIN_COOKIE_NAME = 'jr_admin_session';
+const ADMIN_SESSION_MAX_AGE_SECONDS = 12 * 60 * 60;
+
+type AdminAuthConfig = {
+    enabled: boolean;
+    password: string;
+    tokenSecret: string;
+    secureCookie: boolean;
+};
+
+function resolveAdminAuthConfig(): AdminAuthConfig {
+    const password = process.env.ADMIN_PASSWORD?.trim() ?? '';
+    return {
+        enabled: password.length > 0,
+        password,
+        tokenSecret:
+            process.env.ADMIN_TOKEN_SECRET?.trim() || password || 'dev-only',
+        secureCookie: process.env.ADMIN_COOKIE_SECURE === 'true',
+    };
+}
+
+function parseCookies(header: string | undefined): Record<string, string> {
+    if (!header) return {};
+    return Object.fromEntries(
+        header
+            .split(';')
+            .map(part => part.trim())
+            .filter(Boolean)
+            .map(part => {
+                const index = part.indexOf('=');
+                if (index === -1) return [part, ''];
+                return [part.slice(0, index), decodeURIComponent(part.slice(index + 1))];
+            }),
+    );
+}
+
+function signAdminPayload(payload: string, secret: string): string {
+    return crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+}
+
+function timingSafeEqualStrings(left: string, right: string): boolean {
+    const leftBuffer = Buffer.from(left);
+    const rightBuffer = Buffer.from(right);
+    return (
+        leftBuffer.length === rightBuffer.length &&
+        crypto.timingSafeEqual(leftBuffer, rightBuffer)
+    );
+}
+
+function createAdminToken(config: AdminAuthConfig): string {
+    const now = Math.floor(Date.now() / 1000);
+    const payload = Buffer.from(
+        JSON.stringify({
+            iat: now,
+            exp: now + ADMIN_SESSION_MAX_AGE_SECONDS,
+            nonce: crypto.randomBytes(16).toString('base64url'),
+        }),
+    ).toString('base64url');
+    return `${payload}.${signAdminPayload(payload, config.tokenSecret)}`;
+}
+
+function verifyAdminToken(token: string | undefined, config: AdminAuthConfig): boolean {
+    if (!config.enabled || !token) return false;
+    const [payload, signature] = token.split('.');
+    if (!payload || !signature) return false;
+
+    const expected = signAdminPayload(payload, config.tokenSecret);
+    if (!timingSafeEqualStrings(signature, expected)) return false;
+
+    try {
+        const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
+            exp?: unknown;
+        };
+        return typeof parsed.exp === 'number' && parsed.exp > Math.floor(Date.now() / 1000);
+    } catch {
+        return false;
+    }
+}
+
+function adminCookie(token: string, config: AdminAuthConfig): string {
+    const parts = [
+        `${ADMIN_COOKIE_NAME}=${encodeURIComponent(token)}`,
+        'HttpOnly',
+        'SameSite=Lax',
+        'Path=/',
+        `Max-Age=${ADMIN_SESSION_MAX_AGE_SECONDS}`,
+    ];
+    if (config.secureCookie) parts.push('Secure');
+    return parts.join('; ');
+}
+
+function clearedAdminCookie(config: AdminAuthConfig): string {
+    const parts = [
+        `${ADMIN_COOKIE_NAME}=`,
+        'HttpOnly',
+        'SameSite=Lax',
+        'Path=/',
+        'Max-Age=0',
+    ];
+    if (config.secureCookie) parts.push('Secure');
+    return parts.join('; ');
+}
+
+function isSameOriginAdminRequest(req: Request): boolean {
+    const origin = req.get('origin');
+    const referer = req.get('referer');
+    const source = origin || referer;
+    if (!source) return true;
+
+    try {
+        const sourceUrl = new URL(source);
+        return sourceUrl.host === req.get('host');
+    } catch {
+        return false;
+    }
+}
+
+function wantsHtml(req: Request): boolean {
+    return req.accepts(['html', 'json']) === 'html';
+}
+
+function escapeHtml(value: string): string {
+    return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+}
+
+function requireAdmin(config: AdminAuthConfig) {
+    return (req: Request, res: Response, next: NextFunction): void => {
+        if (!config.enabled) return next();
+        const token = parseCookies(req.get('cookie'))[ADMIN_COOKIE_NAME];
+        if (verifyAdminToken(token, config)) return next();
+
+        if (!req.originalUrl.startsWith('/api/') && wantsHtml(req)) {
+            res.redirect(302, `/admin/login?next=${encodeURIComponent(req.originalUrl)}`);
+            return;
+        }
+
+        res.status(401).json({ code: 'ADMIN_AUTH_REQUIRED', error: 'Admin authentication required' });
+    };
+}
+
+function requireAdminPost(config: AdminAuthConfig) {
+    const auth = requireAdmin(config);
+    return (req: Request, res: Response, next: NextFunction): void => {
+        auth(req, res, () => {
+            if (!config.enabled) return next();
+            if (req.get('x-admin-request') !== '1' || !isSameOriginAdminRequest(req)) {
+                res.status(403).json({ code: 'ADMIN_CSRF_REQUIRED', error: 'Admin request header and same-origin request required' });
+                return;
+            }
+            next();
+        });
+    };
+}
 
 function sendError(
     res: Response,
@@ -611,18 +766,28 @@ const audienceInteractionLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+const adminLoginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 function registerStaticAndSpaRoutes(
     app: ExpressApp,
     dirs: { appDir: string; dashboardDir: string },
+    adminAuth: AdminAuthConfig,
 ): void {
+    const operatorAuth = requireAdmin(adminAuth);
+
     // Serve operator dashboard
-    app.use('/operator', express.static(dirs.dashboardDir));
+    app.use('/operator', operatorAuth, express.static(dirs.dashboardDir));
 
     // Serve fresh public app
     app.use(express.static(dirs.appDir));
 
     // Catch-all for operator dashboard (SPA routing)
-    app.get('/operator/*', (_req, res) => {
+    app.get('/operator/*', operatorAuth, (_req, res) => {
         const indexPath = path.join(dirs.dashboardDir, 'index.html');
         res.sendFile(indexPath, err => {
             if (err) {
@@ -664,13 +829,77 @@ function registerApiRoutes(
         sentenceWindowMs: number;
         recorder: SessionEventRecorderManager;
         replay?: LoadedReplayRecording;
+        adminAuth: AdminAuthConfig;
     },
 ): void {
+    const adminGet = requireAdmin(deps.adminAuth);
+    const adminPost = requireAdminPost(deps.adminAuth);
+
     app.get('/api/health', (_req, res) => {
         res.json({ ok: true, service: 'juryrigged' });
     });
 
-    app.get('/api/metrics', async (_req, res) => {
+    app.get('/admin/login', (req, res) => {
+        if (!deps.adminAuth.enabled) {
+            res.status(404).send('Admin authentication is not configured. Set ADMIN_PASSWORD to enable it.');
+            return;
+        }
+
+        const next = typeof req.query.next === 'string' ? req.query.next : '/operator';
+        res.type('html').send(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>JuryRigged Admin Login</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #08111f; color: #f4f0e8; font-family: system-ui, sans-serif; }
+    form { width: min(92vw, 380px); padding: 28px; border: 1px solid rgba(255,255,255,.18); border-radius: 22px; background: rgba(255,255,255,.06); box-shadow: 0 24px 80px rgba(0,0,0,.35); }
+    h1 { margin: 0 0 8px; font-size: 1.35rem; }
+    p { margin: 0 0 20px; color: #9fb0c7; line-height: 1.45; }
+    label { display: block; margin-bottom: 8px; font-size: .8rem; text-transform: uppercase; letter-spacing: .16em; color: #86e7ff; }
+    input { box-sizing: border-box; width: 100%; border: 1px solid rgba(255,255,255,.18); border-radius: 12px; padding: 12px 14px; background: rgba(0,0,0,.28); color: inherit; font: inherit; }
+    button { width: 100%; margin-top: 16px; border: 0; border-radius: 999px; padding: 12px 16px; background: #d8b45f; color: #120f08; font-weight: 700; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <form method="post" action="/api/admin/login">
+    <h1>Admin access</h1>
+    <p>Sign in to open the operator dashboard.</p>
+    <input type="hidden" name="next" value="${escapeHtml(next)}" />
+    <label for="password">Admin password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" autofocus required />
+    <button type="submit">Enter operator</button>
+  </form>
+</body>
+</html>`);
+    });
+
+    app.post('/api/admin/login', adminLoginLimiter, (req, res) => {
+        if (!deps.adminAuth.enabled) {
+            return sendError(res, 404, 'ADMIN_AUTH_NOT_CONFIGURED', 'Admin authentication is not configured');
+        }
+
+        const password = typeof req.body?.password === 'string' ? req.body.password : '';
+        if (!timingSafeEqualStrings(password, deps.adminAuth.password)) {
+            return sendError(res, 401, 'ADMIN_LOGIN_FAILED', 'Invalid admin credentials');
+        }
+
+        res.setHeader('Set-Cookie', adminCookie(createAdminToken(deps.adminAuth), deps.adminAuth));
+        const next = typeof req.body?.next === 'string' && req.body.next.startsWith('/') ? req.body.next : '/operator';
+        if (wantsHtml(req)) {
+            res.redirect(303, next);
+            return;
+        }
+        return res.json({ ok: true });
+    });
+
+    app.post('/api/admin/logout', adminGet, (_req, res) => {
+        res.setHeader('Set-Cookie', clearedAdminCookie(deps.adminAuth));
+        res.json({ ok: true });
+    });
+
+    app.get('/api/metrics', adminGet, async (_req, res) => {
         try {
             const metrics = await renderMetrics();
             res.setHeader('Content-Type', metricsContentType);
@@ -703,6 +932,7 @@ function registerApiRoutes(
 
     app.post(
         '/api/court/sessions',
+        adminPost,
         createSessionHandler({
             store: deps.store,
             autoRunCourtSession: deps.autoRunCourtSession,
@@ -718,7 +948,11 @@ function registerApiRoutes(
         createVoteHandler(deps.store, deps.voteSpamGuard),
     );
 
-    app.post('/api/court/sessions/:id/phase', createPhaseHandler(deps.store));
+    app.post(
+        '/api/court/sessions/:id/phase',
+        adminPost,
+        createPhaseHandler(deps.store),
+    );
 
     // Phase 7: Audience interaction endpoints (#77)
     app.post(
@@ -1008,6 +1242,9 @@ export async function createServerApp(
     pruneTimer.unref();
 
     app.use(express.json());
+    app.use(express.urlencoded({ extended: false }));
+
+    const adminAuth = resolveAdminAuthConfig();
 
     registerApiRoutes(app, {
         store,
@@ -1017,6 +1254,7 @@ export async function createServerApp(
         sentenceWindowMs,
         recorder,
         replay,
+        adminAuth,
     });
 
     // Start Twitch bot (noop if credentials absent)
@@ -1051,7 +1289,7 @@ export async function createServerApp(
     registerStaticAndSpaRoutes(app, {
         appDir,
         dashboardDir,
-    });
+    }, adminAuth);
 
     const restartPendingIds = await store.recoverInterruptedSessions();
     if (autoRunCourtSession) {
