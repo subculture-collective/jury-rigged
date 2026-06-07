@@ -185,7 +185,7 @@ Phoenix tracing is expected to happen downstream in llama-line. Jury-Rigged keep
 | `OBS_WEBSOCKET_URL`      | OBS WebSocket endpoint                       |
 | `OBS_WEBSOCKET_PASSWORD` | OBS auth password (optional but recommended) |
 
-See `docs/broadcast-integration.md` for setup details.
+See `docs/04-streamer-guide.md` for OBS and broadcast setup.
 
 ### Twitch integration (Phase 7)
 
@@ -218,7 +218,7 @@ When any Twitch variable is unset, the adapter runs in noop mode (no connection)
 - `POST /api/court/sessions/:id/phase`
 - `GET /api/court/sessions/:id/stream` (SSE)
 
-Full schemas, error codes, and event contracts: `docs/api.md`.
+Contributor-facing contract notes live in `docs/02-contributor-guide.md`; system flow and event concepts live in `docs/01-system-overview.md`.
 
 ## Development Commands
 
@@ -310,23 +310,20 @@ npm test
 - `public/assets/` — placeholder-first assets (backgrounds, characters, UI, fonts, SFX)
 - `dashboard/` — operator dashboard (React + Vite)
 - `db/migrations/` — SQL schema migrations
-- `docs/` — architecture, API, moderation, ops runbooks
+- `docs/` — Obsidian-friendly project docs for contributors, operators, streamers, and viewers
 - `ops/` — alert thresholds + runtime health dashboard artifacts
 
 ## Documentation Map
 
-| Document                                  | Description                                       |
-| ----------------------------------------- | ------------------------------------------------- |
-| `docs/ADR-001-juryrigged-architecture.md` | Core architectural decisions and invariants       |
-| `docs/architecture.md`                    | System components and phase sequencing            |
-| `docs/api.md`                             | REST + SSE contracts and schemas                  |
-| `docs/coding-conventions.md`              | Team coding style and maintainability conventions |
-| `docs/operator-runbook.md`                | Operator procedures and incident response         |
-| `docs/ops-runbook.md`                     | Staging deploy path, SLI/alert definitions        |
-| `docs/moderation-playbook.md`             | Moderation policy and handling                    |
-| `docs/event-taxonomy.md`                  | Event taxonomy and payload expectations           |
-| `docs/broadcast-integration.md`           | OBS/broadcast automation + Twitch integration     |
-| `docs/phase5-6-implementation-plan.md`    | Roadmap implementation plan                       |
+| Document | Description |
+| --- | --- |
+| `docs/README.md` | Obsidian-friendly docs index |
+| `docs/01-system-overview.md` | Product, architecture, phases, and core concepts |
+| `docs/02-contributor-guide.md` | Local setup, code map, contracts, and verification |
+| `docs/03-operator-guide.md` | Live operation, moderation, and recovery |
+| `docs/04-streamer-guide.md` | OBS setup, broadcast surfaces, and audience boundaries |
+| `docs/05-viewer-and-chatter-guide.md` | Viewer participation and chat command placeholders |
+| `docs/glossary.md` | Canonical terms for Obsidian linking |
 
 ## Notes
 
