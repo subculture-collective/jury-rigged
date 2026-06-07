@@ -18,7 +18,10 @@ export function OpsMetrics() {
                     fetch('/api/health'),
                     fetch('/api/metrics'),
                 ]);
-                if (!healthRes.ok || !metricsRes.ok) throw new Error('Metrics unavailable or require admin auth');
+                if (metricsRes.status === 401) {
+                    throw new Error('JuryRigged admin session expired. Open /admin/login, sign in, then return to the operator dashboard.');
+                }
+                if (!healthRes.ok || !metricsRes.ok) throw new Error('Metrics API unavailable. Check the server health and operator auth.');
                 const healthJson = await healthRes.json() as Record<string, unknown>;
                 const metricsText = await metricsRes.text();
                 if (!cancelled) {

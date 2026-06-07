@@ -58,8 +58,11 @@ export function LLMAuditLog({ sessionId }: { sessionId: string | null }) {
                     fetch(`/api/admin/llm-audit?${searchParams.toString()}`),
                     fetch('/api/admin/llm-audit/stats'),
                 ]);
+                if (auditRes.status === 401 || statsRes.status === 401) {
+                    throw new Error('JuryRigged admin session expired. Open /admin/login, sign in, then return to the operator dashboard.');
+                }
                 if (!auditRes.ok || !statsRes.ok) {
-                    throw new Error('LLM audit endpoints are unavailable or require admin auth');
+                    throw new Error('LLM audit API unavailable. Check the server health and operator auth.');
                 }
                 const auditJson = await auditRes.json() as { entries?: LLMAuditEntry[] };
                 const statsJson = await statsRes.json() as { stats?: LLMAuditStats };
@@ -92,7 +95,7 @@ export function LLMAuditLog({ sessionId }: { sessionId: string | null }) {
             }
         };
         source.onerror = () => {
-            setError('Live LLM audit feed disconnected; polling fallback remains active.');
+            setError('Live LLM audit feed disconnected. If this persists, refresh after signing in at /admin/login.');
         };
         return () => source.close();
     }, []);
