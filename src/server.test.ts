@@ -261,6 +261,9 @@ test('admin auth protects operator and admin APIs while public routes stay open'
         const metrics = await fetch(`${authBaseUrl}/api/metrics`);
         assert.equal(metrics.status, 401);
 
+        const auditNoCookie = await fetch(`${authBaseUrl}/api/admin/llm-audit`);
+        assert.equal(auditNoCookie.status, 401);
+
         const wrongLogin = await fetch(`${authBaseUrl}/api/admin/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -327,6 +330,13 @@ test('admin auth protects operator and admin APIs while public routes stay open'
             },
         );
         assert.equal(phase.status, 200);
+
+        const audit = await fetch(`${authBaseUrl}/api/admin/llm-audit`, {
+            headers: { Cookie: cookie },
+        });
+        assert.equal(audit.status, 200);
+        const auditJson = (await audit.json()) as { entries?: unknown[] };
+        assert.ok(Array.isArray(auditJson.entries));
     } finally {
         await new Promise<void>(resolve => authServer.close(() => resolve()));
         created.dispose();

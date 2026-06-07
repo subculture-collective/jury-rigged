@@ -7,8 +7,6 @@ import {
   howItWorks,
   jury,
   liveMeta,
-  operatorQueue,
-  recapMoments,
   timeline,
   transcript,
   views,
@@ -18,7 +16,6 @@ import {
 import {
   CaseCard,
   EvidenceList,
-  HealthCard,
   JuryGrid,
   LivePill,
   PhaseRail,
@@ -102,9 +99,7 @@ function isViewKey(value: string | null): value is ViewKey {
     value === 'directory' ||
     value === 'details' ||
     value === 'voting' ||
-    value === 'operator' ||
-    value === 'about' ||
-    value === 'recap'
+    value === 'about'
   );
 }
 
@@ -539,7 +534,7 @@ function App() {
           </div>
 
           <nav className="mt-5 grid gap-2 md:grid-cols-2 xl:grid-cols-4" aria-label="View navigation" role="tablist">
-            {views.map((view) => (
+            {views.filter(view => view.key !== 'overlay').map((view) => (
               <TabButton
                 key={view.key}
                 active={activeView === view.key}
@@ -556,9 +551,7 @@ function App() {
           {activeView === 'directory' ? <DirectoryView selectedCaseId={selectedCaseId} onSelectCase={setSelectedCaseId} /> : null}
           {activeView === 'details' ? <DetailsView selectedCase={selectedCase} onSelectCase={setSelectedCaseId} /> : null}
           {activeView === 'voting' ? <VotingView selectedCase={selectedCase} /> : null}
-          {activeView === 'operator' ? <OperatorView selectedCase={selectedCase} /> : null}
           {activeView === 'about' ? <AboutView /> : null}
-          {activeView === 'recap' ? <RecapView selectedCase={selectedCase} /> : null}
         </main>
       </div>
     </div>
@@ -911,71 +904,6 @@ function VotingView({ selectedCase }: { selectedCase: (typeof cases)[number] }) 
   );
 }
 
-function OperatorView({ selectedCase }: { selectedCase: (typeof cases)[number] }) {
-  return (
-    <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-      <Surface className="p-5">
-        <SectionLabel eyebrow="Operator dashboard" title="Queue + control health" note="Short, scannable diagnostics for broadcast operators." />
-        <div className="mt-5 grid gap-3">
-          {operatorQueue.map((item) => (
-            <div key={item.task} className="rounded-2xl border border-[hsl(var(--border))] bg-black/10 p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm font-semibold text-[hsl(var(--text))]">{item.task}</p>
-                  <p className="mt-1 text-sm text-[hsl(var(--muted))]">{item.detail}</p>
-                </div>
-                <span className="rounded-full border border-[hsl(var(--border))] px-2 py-1 text-[10px] uppercase tracking-[0.22em] text-[hsl(var(--cyan))]">{item.state}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <StatChip label="Selected case" value={selectedCase.docket} tone="purple" />
-          <StatChip label="Next action" value="Cue lower-third" tone="gold" />
-        </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
-          {['Advance phase', 'Pause stream', 'Send system notice'].map((label) => (
-            <button key={label} type="button" className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-3 py-2 text-sm font-semibold text-[hsl(var(--text))] transition hover:border-[hsl(var(--cyan)/0.45)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cyan))]">
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="mt-5 rounded-2xl border border-[hsl(var(--red)/0.45)] bg-[hsl(var(--red)/0.08)] p-4">
-          <p className="font-monoish text-[10px] uppercase tracking-[0.3em] text-[hsl(var(--red))]">Confirmation required</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {['End Session', 'Reset Session', 'Lock Chat'].map((label) => (
-              <button key={label} type="button" className="rounded-full border border-[hsl(var(--red)/0.45)] px-3 py-1 text-xs font-semibold text-[hsl(var(--text))] transition hover:bg-[hsl(var(--red)/0.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--red))]">
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </Surface>
-
-      <div className="space-y-5">
-        <div className="grid gap-3 sm:grid-cols-2">
-          {health.map((item) => (
-            <HealthCard key={item.label} label={item.label} value={item.value} note={item.note} />
-          ))}
-        </div>
-        <Surface className="p-5">
-          <SectionLabel eyebrow="Watchlist" title="Operator alerts" note="Issues are phrased as actions, not vague red statuses." />
-          <div className="mt-4 space-y-3">
-            <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-4">
-              <p className="text-sm font-semibold text-[hsl(var(--text))]">No signal loss detected</p>
-              <p className="mt-2 text-sm text-[hsl(var(--muted))]">Caption feed remains under threshold and the archive write queue is healthy.</p>
-            </div>
-            <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-4">
-              <p className="text-sm font-semibold text-[hsl(var(--text))]">Lower-third ready</p>
-              <p className="mt-2 text-sm text-[hsl(var(--muted))]">Prepared for the next speaker change or exhibit callout.</p>
-            </div>
-          </div>
-        </Surface>
-      </div>
-    </section>
-  );
-}
-
 function AboutView() {
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_0.9fr]">
@@ -997,39 +925,6 @@ function AboutView() {
           <p>• Juror states include visible text labels; color never carries meaning alone.</p>
           <p>• Focus states are high contrast and keyboard friendly on all buttons.</p>
           <p>• Motion respects reduced-motion preferences via CSS and Tailwind-safe classes.</p>
-        </div>
-      </Surface>
-    </section>
-  );
-}
-
-function RecapView({ selectedCase }: { selectedCase: (typeof cases)[number] }) {
-  return (
-    <section className="grid gap-5 xl:grid-cols-[1fr_0.95fr]">
-      <Surface className="p-5">
-        <SectionLabel eyebrow="Replay / Recap" title="Highlights from the record" note={`Archived context for ${selectedCase.docket}; useful for recap screens and highlight reels.`} />
-        <div className="mt-5 space-y-3">
-          {recapMoments.map((moment) => (
-            <div key={moment.stamp} className="rounded-2xl border border-[hsl(var(--border))] bg-black/10 p-4">
-              <div className="flex items-center gap-3">
-                <span className="rounded-full border border-[hsl(var(--border))] px-2 py-1 font-monoish text-[10px] uppercase tracking-[0.24em] text-[hsl(var(--cyan))]">{moment.stamp}</span>
-                <p className="text-sm font-semibold text-[hsl(var(--text))]">{moment.title}</p>
-              </div>
-              <p className="mt-2 text-sm leading-6 text-[hsl(var(--muted))]">{moment.detail}</p>
-            </div>
-          ))}
-        </div>
-      </Surface>
-      <Surface className="p-5">
-        <SectionLabel eyebrow="Recap card" title="Replay summary" note="Useful as a poster frame or archive sidebar." />
-        <div className="mt-5 rounded-[2rem] border border-[hsl(var(--border))] bg-[linear-gradient(180deg,hsl(var(--surface-2))_0%,hsl(var(--surface))_100%)] p-5">
-          <p className="font-monoish text-[10px] uppercase tracking-[0.34em] text-[hsl(var(--gold))]">{selectedCase.docket}</p>
-          <h3 className="mt-2 text-2xl font-semibold text-[hsl(var(--text))]">{selectedCase.title}</h3>
-          <p className="mt-3 text-sm leading-6 text-[hsl(var(--muted))]">{selectedCase.summary}</p>
-          <div className="mt-5 grid gap-2 sm:grid-cols-2">
-            <StatChip label="Outcome" value={selectedCase.status} tone="green" />
-            <StatChip label="Phase" value={selectedCase.phase} tone="cyan" />
-          </div>
         </div>
       </Surface>
     </section>

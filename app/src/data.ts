@@ -4,9 +4,7 @@ export type ViewKey =
   | 'directory'
   | 'details'
   | 'voting'
-  | 'operator'
-  | 'about'
-  | 'recap';
+  | 'about';
 
 export type CaseItem = {
   id: string;
@@ -62,9 +60,7 @@ export const views: Array<{ key: ViewKey; label: string; note: string }> = [
   { key: 'directory', label: 'Case Directory', note: 'Active docket list' },
   { key: 'details', label: 'Case Details', note: 'Evidence + timeline' },
   { key: 'voting', label: 'Jury Voting', note: 'Ballot + eligibility' },
-  { key: 'operator', label: 'Operator Dashboard', note: 'Queue + health' },
   { key: 'about', label: 'About / How It Works', note: 'Workflow explainer' },
-  { key: 'recap', label: 'Replay / Recap', note: 'Moments + summaries' },
 ];
 
 export const cases: CaseItem[] = [
@@ -225,13 +221,6 @@ export const voteOptions: VoteOption[] = [
   },
 ];
 
-export const operatorQueue = [
-  { task: 'Lower-third swap', state: 'Ready', detail: 'Next speaker tag preloaded' },
-  { task: 'Exhibit pin', state: 'Waiting', detail: 'Awaiting judge cue' },
-  { task: 'Caption feed', state: 'Healthy', detail: '48ms latency, no drops' },
-  { task: 'Jury panel sync', state: 'Healthy', detail: 'All 12 indicators online' },
-];
-
 export const health = [
   { label: 'SSE status', value: 'Open', note: 'Reconnect budget untouched' },
   { label: 'Chat rate', value: '42/min', note: 'Below moderation threshold' },
@@ -252,13 +241,6 @@ export const timeline = [
   { step: 'Evidence', note: 'Exhibits admitted and indexed.', state: 'complete' },
   { step: 'Deliberation', note: 'Jury panel in progress.', state: 'active' },
   { step: 'Verdict', note: 'Awaiting foreperson cue.', state: 'pending' },
-];
-
-export const recapMoments = [
-  { stamp: '00:14', title: 'Feeds locked', detail: 'Broadcast goes live with clean audio and caption sync.' },
-  { stamp: '01:06', title: 'Defense challenge', detail: 'A narrow objection keeps the timeline under scrutiny.' },
-  { stamp: '01:28', title: 'Jury split', detail: 'The panel moves toward a stable center of gravity.' },
-  { stamp: '01:53', title: 'Exhibit queue', detail: 'Evidence cards are reindexed for replay.' },
 ];
 
 export const howItWorks = [

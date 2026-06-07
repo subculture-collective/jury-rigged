@@ -1,5 +1,6 @@
 import { AGENTS } from '../agents.js';
-import { llmGenerate, sanitizeDialogue } from '../llm/client.js';
+import { llmGenerateDetailed, sanitizeDialogue } from '../llm/client.js';
+import type { LLMAuditLogStore } from '../llm/audit-log-store.js';
 import { logger } from '../logger.js';
 import { moderateContent } from '../moderation/content-filter.js';
 import { createTTSAdapterFromEnv, type TTSAdapter } from '../tts/adapter.js';
@@ -155,6 +156,7 @@ function resolveBudgetResolution(input: {
     role: CourtRole;
     maxTokens?: number;
     roleBudgetConfig?: RoleTokenBudgetConfig;
+    auditLogStore?: LLMAuditLogStore;
 }): BudgetResolution {
     if (input.roleBudgetConfig) {
         return applyRoleTokenBudget(
@@ -252,6 +254,7 @@ async function generateTurn(input: {
         promptTokens: number;
         completionTokens: number;
     }) => void;
+    auditLogStore?: LLMAuditLogStore;
 }): Promise<CourtTurn> {
     const { store, session, speaker, role, userInstruction } = input;
 
@@ -271,14 +274,16 @@ async function generateTurn(input: {
         roleBudgetConfig: input.roleBudgetConfig,
     });
 
-    const raw = await llmGenerate({
-        messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userInstruction },
-        ],
+    const messages = [
+        { role: 'system' as const, content: systemPrompt },
+        { role: 'user' as const, content: userInstruction },
+    ];
+    const llmResult = await llmGenerateDetailed({
+        messages,
         temperature: session.phase === 'witness_exam' ? 0.8 : 0.7,
         maxTokens: budgetResolution.appliedMaxTokens,
     });
+    const raw = llmResult.text;
 
     let dialogue = sanitizeDialogue(raw);
     const capResult =
@@ -318,6 +323,24 @@ async function generateTurn(input: {
     });
 
     appendTurnToSession(session, turn);
+
+    void input.auditLogStore?.append({
+        sessionId: session.id,
+        turnId: turn.id,
+        phase: session.phase,
+        speaker,
+        role,
+        source: 'main_turn',
+        provider: llmResult.provider,
+        model: llmResult.model,
+        status: llmResult.status,
+        messages,
+        rawResponse: raw,
+        sanitizedResponse: moderation.sanitized,
+        latencyMs: llmResult.latencyMs,
+        errorCode: llmResult.errors.length ? 'MODEL_RETRY_OR_FALLBACK' : undefined,
+        errorMessage: llmResult.errors.join('\n') || undefined,
+    });
 
     // Phase 7: Infer and emit render directive for this turn
     const renderDirective = inferRenderDirective(
@@ -380,6 +403,7 @@ function verdictOptions(caseType: CaseType): string[] {
 export interface RunCourtSessionOptions {
     ttsAdapter?: TTSAdapter;
     sleepFn?: (ms: number) => Promise<void>;
+    auditLogStore?: LLMAuditLogStore;
 }
 
 type GenerateTurnInput = Parameters<typeof generateTurn>[0];
@@ -387,12 +411,14 @@ type GenerateTurnInput = Parameters<typeof generateTurn>[0];
 function createGenerateBudgetedTurn(input: {
     roleTokenBudgetConfig: RoleTokenBudgetConfig;
     onTokenSample: (sample: TokenSample) => void;
+    auditLogStore?: LLMAuditLogStore;
 }): GenerateBudgetedTurn {
     return turnInput =>
         generateTurn({
             ...turnInput,
             roleBudgetConfig: input.roleTokenBudgetConfig,
             onTokenSample: input.onTokenSample,
+            auditLogStore: input.auditLogStore,
         });
 }
 
@@ -611,6 +637,7 @@ export async function runCourtSession(
     const generateBudgetedTurn = createGenerateBudgetedTurn({
         roleTokenBudgetConfig,
         onTokenSample,
+        auditLogStore: options.auditLogStore,
     });
     const safelySpeak = createSafelySpeak({
         tts,
@@ -628,6 +655,7 @@ export async function runCourtSession(
         generateBudgetedTurn,
         witnessCapConfig,
         recapCadence,
+        auditLogStore: options.auditLogStore,
     };
 
     try {

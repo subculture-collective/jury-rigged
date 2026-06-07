@@ -29,6 +29,12 @@ import {
 } from './twitch/eventsub.js';
 import { initTwitchBot } from './twitch/bot.js';
 import {
+    createLLMAuditLogStore,
+    resolveLLMAuditConfig,
+    type LLMAuditLogStore,
+    type LLMAuditStatus,
+} from './llm/audit-log-store.js';
+import {
     elapsedSecondsSince,
     instrumentCourtSessionStore,
     metricsContentType,
@@ -222,6 +228,17 @@ function requireAdminPost(config: AdminAuthConfig) {
     };
 }
 
+function requireConfiguredAdmin(config: AdminAuthConfig) {
+    const auth = requireAdmin(config);
+    return (req: Request, res: Response, next: NextFunction): void => {
+        if (!config.enabled) {
+            res.status(404).json({ code: 'ADMIN_AUTH_NOT_CONFIGURED', error: 'Admin authentication is not configured' });
+            return;
+        }
+        auth(req, res, next);
+    };
+}
+
 function sendError(
     res: Response,
     status: number,
@@ -358,6 +375,7 @@ export function resolveTrustProxySetting(
 
 interface SessionRouteDeps {
     store: CourtSessionStore;
+    auditLogStore: LLMAuditLogStore;
     autoRunCourtSession: boolean;
     verdictWindowMs: number;
     sentenceWindowMs: number;
@@ -503,7 +521,9 @@ function createSessionHandler(deps: SessionRouteDeps) {
             }
 
             if (deps.autoRunCourtSession) {
-                void runCourtSession(session.id, deps.store);
+                void runCourtSession(session.id, deps.store, {
+                    auditLogStore: deps.auditLogStore,
+                });
             }
 
             return res.status(201).json({ session });
@@ -830,10 +850,12 @@ function registerApiRoutes(
         recorder: SessionEventRecorderManager;
         replay?: LoadedReplayRecording;
         adminAuth: AdminAuthConfig;
+        auditLogStore: LLMAuditLogStore;
     },
 ): void {
     const adminGet = requireAdmin(deps.adminAuth);
     const adminPost = requireAdminPost(deps.adminAuth);
+    const strictAdminGet = requireConfiguredAdmin(deps.adminAuth);
 
     app.get('/api/health', (_req, res) => {
         res.json({ ok: true, service: 'juryrigged' });
@@ -853,23 +875,91 @@ function registerApiRoutes(
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>JuryRigged Admin Login</title>
   <style>
-    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #08111f; color: #f4f0e8; font-family: system-ui, sans-serif; }
-    form { width: min(92vw, 380px); padding: 28px; border: 1px solid rgba(255,255,255,.18); border-radius: 22px; background: rgba(255,255,255,.06); box-shadow: 0 24px 80px rgba(0,0,0,.35); }
-    h1 { margin: 0 0 8px; font-size: 1.35rem; }
-    p { margin: 0 0 20px; color: #9fb0c7; line-height: 1.45; }
-    label { display: block; margin-bottom: 8px; font-size: .8rem; text-transform: uppercase; letter-spacing: .16em; color: #86e7ff; }
-    input { box-sizing: border-box; width: 100%; border: 1px solid rgba(255,255,255,.18); border-radius: 12px; padding: 12px 14px; background: rgba(0,0,0,.28); color: inherit; font: inherit; }
-    button { width: 100%; margin-top: 16px; border: 0; border-radius: 999px; padding: 12px 16px; background: #d8b45f; color: #120f08; font-weight: 700; cursor: pointer; }
+    :root { color-scheme: dark; --bg: 210 42% 7%; --surface: 212 38% 10%; --surface-2: 212 34% 14%; --border: 205 28% 23%; --text: 205 40% 92%; --muted: 207 18% 64%; --cyan: 190 92% 58%; --gold: 38 68% 60%; --purple: 260 75% 62%; }
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 32px 20px;
+      color: hsl(var(--text));
+      font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+      background:
+        radial-gradient(circle at 15% 10%, hsl(var(--purple) / 0.14), transparent 30%),
+        radial-gradient(circle at 85% 0%, hsl(var(--cyan) / 0.12), transparent 24%),
+        radial-gradient(circle at 75% 80%, hsl(var(--gold) / 0.08), transparent 28%),
+        linear-gradient(180deg, hsl(var(--bg)) 0%, hsl(211 41% 5%) 100%);
+    }
+    body::before {
+      content: '';
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 100% 5px;
+      mix-blend-mode: soft-light;
+      opacity: 0.1;
+    }
+    .shell {
+      position: relative;
+      width: min(100%, 440px);
+      border: 1px solid hsl(var(--border));
+      border-radius: 28px;
+      padding: 28px;
+      background: linear-gradient(180deg, hsl(var(--surface) / 0.88) 0%, hsl(var(--surface-2) / 0.78) 100%);
+      box-shadow: 0 24px 90px rgba(0, 0, 0, 0.42);
+      backdrop-filter: blur(20px);
+    }
+    .eyebrow { margin: 0 0 10px; font-size: 10px; letter-spacing: 0.34em; text-transform: uppercase; color: hsl(var(--cyan)); font-family: 'JetBrains Mono', monospace; }
+    h1 { margin: 0; font-size: 1.9rem; line-height: 1.1; letter-spacing: -0.02em; }
+    .lede { margin: 14px 0 22px; color: hsl(var(--muted)); line-height: 1.55; font-size: 0.95rem; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+    .pill { border: 1px solid hsl(var(--border)); border-radius: 999px; padding: 7px 10px; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: hsl(var(--muted)); background: rgba(0, 0, 0, 0.12); }
+    label { display: block; margin-bottom: 8px; font-size: .78rem; text-transform: uppercase; letter-spacing: .18em; color: hsl(var(--cyan)); }
+    input {
+      box-sizing: border-box;
+      width: 100%;
+      border: 1px solid hsl(var(--border));
+      border-radius: 14px;
+      padding: 13px 14px;
+      background: rgba(0, 0, 0, 0.22);
+      color: inherit;
+      font: inherit;
+      outline: none;
+      transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+    }
+    input:focus { border-color: hsl(var(--cyan) / 0.7); box-shadow: 0 0 0 4px hsl(var(--cyan) / 0.12); }
+    button {
+      width: 100%;
+      margin-top: 16px;
+      border: 0;
+      border-radius: 999px;
+      padding: 13px 16px;
+      background: linear-gradient(135deg, hsl(var(--gold)) 0%, #f3d48d 100%);
+      color: #17120a;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 10px 28px rgba(216, 180, 95, 0.18);
+    }
+    .hint { margin: 16px 0 0; font-size: 12px; line-height: 1.5; color: hsl(var(--muted)); }
   </style>
 </head>
 <body>
-  <form method="post" action="/api/admin/login">
-    <h1>Admin access</h1>
-    <p>Sign in to open the operator dashboard.</p>
+  <form class="shell" method="post" action="/api/admin/login">
+    <p class="eyebrow">JuryRigged · Operator Access</p>
+    <h1>Enter the protected dashboard</h1>
+    <p class="lede">Broadcast controls, moderation, and recap tools live behind this court seal.</p>
+    <div class="meta">
+      <span class="pill">/operator</span>
+      <span class="pill">Protected</span>
+      <span class="pill">Courtroom broadcast</span>
+    </div>
     <input type="hidden" name="next" value="${escapeHtml(next)}" />
     <label for="password">Admin password</label>
     <input id="password" name="password" type="password" autocomplete="current-password" autofocus required />
     <button type="submit">Enter operator</button>
+    <p class="hint">Need the public broadcast? Use the main app or the overlay deep link; this login only opens the dashboard.</p>
   </form>
 </body>
 </html>`);
@@ -897,6 +987,37 @@ function registerApiRoutes(
     app.post('/api/admin/logout', adminGet, (_req, res) => {
         res.setHeader('Set-Cookie', clearedAdminCookie(deps.adminAuth));
         res.json({ ok: true });
+    });
+
+    app.get('/api/admin/llm-audit', strictAdminGet, async (req, res) => {
+        const includeBody = req.query.includeBody === '1';
+        const limit = Number.parseInt(String(req.query.limit ?? '50'), 10);
+        const entries = await deps.auditLogStore.list({
+            sessionId: typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined,
+            status: typeof req.query.status === 'string' ? req.query.status as LLMAuditStatus : undefined,
+            model: typeof req.query.model === 'string' ? req.query.model : undefined,
+            q: typeof req.query.q === 'string' ? req.query.q : undefined,
+            limit: Number.isFinite(limit) ? limit : 50,
+            includeBody,
+        });
+        res.json({ entries });
+    });
+
+    app.get('/api/admin/llm-audit/stats', strictAdminGet, async (_req, res) => {
+        res.json({ stats: await deps.auditLogStore.stats() });
+    });
+
+    app.get('/api/admin/llm-audit/feed', strictAdminGet, (req, res) => {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders?.();
+        const send = (entry: unknown) => {
+            res.write(`data: ${JSON.stringify(entry)}\n\n`);
+        };
+        send({ type: 'connected', at: new Date().toISOString() });
+        const unsubscribe = deps.auditLogStore.subscribe(entry => send({ type: 'llm_audit', entry }));
+        req.on('close', unsubscribe);
     });
 
     app.get('/api/metrics', adminGet, async (_req, res) => {
@@ -935,6 +1056,7 @@ function registerApiRoutes(
         adminPost,
         createSessionHandler({
             store: deps.store,
+            auditLogStore: deps.auditLogStore,
             autoRunCourtSession: deps.autoRunCourtSession,
             verdictWindowMs: deps.verdictWindowMs,
             sentenceWindowMs: deps.sentenceWindowMs,
@@ -1195,6 +1317,8 @@ export async function createServerApp(
 
     const baseStore = options.store ?? (await createCourtSessionStore());
     const store = instrumentCourtSessionStore(baseStore);
+    const auditConfig = resolveLLMAuditConfig();
+    const auditLogStore = createLLMAuditLogStore(auditConfig);
     const replay =
         options.replay ?
             await loadReplayRecording({
@@ -1248,6 +1372,7 @@ export async function createServerApp(
 
     registerApiRoutes(app, {
         store,
+        auditLogStore,
         voteSpamGuard,
         autoRunCourtSession,
         verdictWindowMs,
@@ -1301,7 +1426,7 @@ export async function createServerApp(
                     `[replay] failed to start recorder for recovered session=${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
                 );
             }
-            void runCourtSession(sessionId, store);
+            void runCourtSession(sessionId, store, { auditLogStore });
         }
     }
 
@@ -1311,6 +1436,7 @@ export async function createServerApp(
         dispose: () => {
             clearInterval(pruneTimer);
             void recorder.dispose();
+            void auditLogStore.dispose();
         },
     };
 }

@@ -25,6 +25,15 @@ function runtimeLLMConfig(env: NodeJS.ProcessEnv = process.env): {
     return { apiKey, models, forceMock };
 }
 
+export interface LLMGenerateDetailedResult {
+    text: string;
+    provider: 'openrouter' | 'mock';
+    model: string;
+    status: 'mock' | 'succeeded' | 'fallback';
+    latencyMs: number;
+    errors: string[];
+}
+
 function extractFromXml(text: string): string {
     const contentMatch = text.match(
         /<parameter\s+name=["']content["'][^>]*>([\s\S]*?)<\/parameter>/i,
@@ -148,10 +157,9 @@ async function tryModelGenerate(
         );
 
         if (!response.ok) {
-            const body = await response.text();
             return {
                 success: false,
-                reason: `HTTP ${response.status}: ${body.slice(0, 100)}`,
+                reason: `HTTP ${response.status}`,
             };
         }
 
@@ -179,9 +187,10 @@ async function tryModelGenerate(
     }
 }
 
-export async function llmGenerate(
+export async function llmGenerateDetailed(
     options: LLMGenerateOptions,
-): Promise<string> {
+): Promise<LLMGenerateDetailedResult> {
+    const startedAt = Date.now();
     const config = runtimeLLMConfig();
     const { messages, temperature = 0.7, maxTokens = 300 } = options;
 
@@ -190,7 +199,14 @@ export async function llmGenerate(
         .find(message => message.role === 'user')?.content;
 
     if (!config.apiKey || config.forceMock) {
-        return mockReply(latestUserMessage ?? '');
+        return {
+            text: mockReply(latestUserMessage ?? ''),
+            provider: 'mock',
+            model: 'mock',
+            status: 'mock',
+            latencyMs: Date.now() - startedAt,
+            errors: [],
+        };
     }
 
     // Try each model in sequence until one succeeds
@@ -211,7 +227,14 @@ export async function llmGenerate(
                     `[llm] model="${model}" succeeded after ${errors.length} failures`,
                 );
             }
-            return result.text;
+            return {
+                text: result.text,
+                provider: 'openrouter',
+                model,
+                status: 'succeeded',
+                latencyMs: Date.now() - startedAt,
+                errors,
+            };
         }
 
         errors.push(`${model}: ${result.reason}`);
@@ -224,5 +247,18 @@ export async function llmGenerate(
     console.warn(
         `[llm] All ${config.models.length} models failed; falling back to mock dialogue. Errors:\n${errors.join('\n')}`,
     );
-    return mockReply(latestUserMessage ?? '');
+    return {
+        text: mockReply(latestUserMessage ?? ''),
+        provider: 'mock',
+        model: 'mock',
+        status: 'fallback',
+        latencyMs: Date.now() - startedAt,
+        errors,
+    };
+}
+
+export async function llmGenerate(
+    options: LLMGenerateOptions,
+): Promise<string> {
+    return (await llmGenerateDetailed(options)).text;
 }

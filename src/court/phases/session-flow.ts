@@ -11,6 +11,7 @@ import type {
     CourtTurn,
 } from '../../types.js';
 import type { CourtSessionStore } from '../../store/session-store.js';
+import type { LLMAuditLogStore } from '../../llm/audit-log-store.js';
 import { estimateCostUsd, type RoleTokenBudgetConfig } from '../token-budget.js';
 import { effectiveTokenLimit, type WitnessCapConfig } from '../witness-caps.js';
 import { buildWitnessScripts } from './witness-script.js';
@@ -86,6 +87,7 @@ export interface SessionRuntimeContext {
     generateBudgetedTurn: GenerateBudgetedTurn;
     witnessCapConfig: WitnessCapConfig;
     recapCadence: number;
+    auditLogStore?: LLMAuditLogStore;
 }
 
 function mostVotedChoice(votes: Record<string, number>, fallback: string): string {
@@ -416,6 +418,7 @@ export async function runWitnessExamPhase(
                     session: context.session,
                     pause: context.pause,
                     pauseMs: PAUSE_MS.witnessBetweenTurns,
+                    auditLogStore: context.auditLogStore,
                 });
             }
         }
@@ -484,6 +487,7 @@ export async function runWitnessExamPhase(
                     session: context.session,
                     pause: context.pause,
                     pauseMs: PAUSE_MS.witnessBetweenTurns,
+                    auditLogStore: context.auditLogStore,
                 });
             }
         }

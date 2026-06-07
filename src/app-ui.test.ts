@@ -30,19 +30,21 @@ test('app implements the design-spec page set without old public UI', () => {
         'Case Directory',
         'Case Details',
         'Jury Voting',
-        'Operator Dashboard',
         'About / How It Works',
-        'Replay / Recap',
     ]) {
         assert.match(data, new RegExp(view.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     }
 
+    assert.doesNotMatch(data, /Operator Dashboard|Replay \/ Recap/);
+    assert.doesNotMatch(app, /Operator dashboard|Replay \/ Recap|selectedCase\.docket.*recap/);
+
     assert.match(app, /function ViewerView/);
     assert.match(app, /function OverlayView/);
+    assert.match(app, /views\.filter\(view => view\.key !== 'overlay'\)/);
     assert.match(app, /function DirectoryView/);
     assert.match(app, /function DetailsView/);
     assert.match(app, /function VotingView/);
-    assert.match(app, /function OperatorView/);
+    assert.match(app, /function AboutView/);
 });
 
 test('overlay supports live-only deep link and rotating sidebar', () => {
