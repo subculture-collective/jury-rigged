@@ -1022,9 +1022,10 @@ export async function createServerApp(
     // Start Twitch bot (noop if credentials absent)
     const twitchBot = initTwitchBot({
         channel: process.env.TWITCH_CHANNEL ?? '',
+        botUsername: process.env.TWITCH_BOT_USERNAME || undefined,
         botToken: process.env.TWITCH_BOT_TOKEN ?? '',
         clientId: process.env.TWITCH_CLIENT_ID ?? '',
-        clientSecret: process.env.TWITCH_CLIENT_SECRET ?? '',
+        clientSecret: process.env.TWITCH_CLIENT_SECRET || undefined,
         apiBaseUrl: `http://localhost:${process.env.PORT ?? 3000}`,
         getActiveSessionId: (() => {
             let cachedId: string | null = null;

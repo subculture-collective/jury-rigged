@@ -28,18 +28,12 @@ services:
         depends_on:
             db:
                 condition: service_healthy
+        env_file:
+            - .env
         environment:
             PORT: 3001
             TRUST_PROXY: ${TRUST_PROXY:-1}
             DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-change_this_now}@db:5432/juryrigged
-            OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-            LLM_MODEL: ${LLM_MODEL:-deepseek/deepseek-chat-v3-0324:free}
-            LLM_MOCK: ${LLM_MOCK:-false}
-            LOG_LEVEL: ${LOG_LEVEL:-info}
-            TTS_PROVIDER: ${TTS_PROVIDER:-noop}
-            BROADCAST_PROVIDER: ${BROADCAST_PROVIDER:-noop}
-            VERDICT_VOTE_WINDOW_MS: ${VERDICT_VOTE_WINDOW_MS:-20000}
-            SENTENCE_VOTE_WINDOW_MS: ${SENTENCE_VOTE_WINDOW_MS:-20000}
         ports:
             - '${API_BIND_ADDR:-127.0.0.1}:${API_HOST_PORT:-3001}:3001'
         networks:

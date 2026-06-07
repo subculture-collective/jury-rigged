@@ -19,7 +19,8 @@ export interface BotConfig {
     botUsername?: string;
     botToken: string;
     clientId: string;
-    clientSecret: string;
+    /** Optional: required for OAuth/API/EventSub work, but not for IRC chat. */
+    clientSecret?: string;
     apiBaseUrl: string;
     /** Returns the current active session ID, or null if no session is running. */
     getActiveSessionId: () => Promise<string | null>;
@@ -56,8 +57,8 @@ export class TwitchBot {
             DEFAULT_COMMAND_RATE_LIMIT,
         );
 
-        // Graceful noop mode if credentials missing
-        if (!config || !this.hasRequiredEnvVars()) {
+        // Graceful noop mode if IRC credentials are missing
+        if (!config || !this.hasRequiredConfig(config)) {
             console.log(
                 'Twitch bot disabled: missing credentials. Set TWITCH_CHANNEL, TWITCH_BOT_TOKEN, TWITCH_CLIENT_ID.',
             );
@@ -69,12 +70,11 @@ export class TwitchBot {
         this.config = config;
     }
 
-    private hasRequiredEnvVars(): boolean {
-        return !!(
-            process.env.TWITCH_CHANNEL &&
-            process.env.TWITCH_BOT_TOKEN &&
-            process.env.TWITCH_CLIENT_ID &&
-            process.env.TWITCH_CLIENT_SECRET
+    private hasRequiredConfig(config: BotConfig): boolean {
+        return Boolean(
+            config.channel.trim() &&
+                config.botToken.trim() &&
+                config.clientId.trim(),
         );
     }
 
@@ -92,8 +92,10 @@ export class TwitchBot {
             await this.connectIRC();
             console.log('[Twitch Bot] IRC connected');
 
-            await this.registerEventSub();
-            console.log('[Twitch Bot] EventSub registered');
+            const eventSubRegistered = await this.registerEventSub();
+            if (eventSubRegistered) {
+                console.log('[Twitch Bot] EventSub registered');
+            }
 
             this.isActive = true;
         } catch (err) {
@@ -133,13 +135,7 @@ export class TwitchBot {
 
                     const username =
                         tags.username ?? tags['display-name'] ?? 'unknown';
-                    const command = this.parseCommand(message, username);
-                    if (!command || !this.config) return;
-
-                    const sessionId = await this.config.getActiveSessionId();
-                    if (!sessionId) return;
-
-                    await this.forwardCommand(command, sessionId);
+                    await this.handleChatMessage(message, username);
                 } catch (error) {
                     console.error(
                         '[Twitch Bot] Error handling IRC message:',
@@ -157,10 +153,34 @@ export class TwitchBot {
      * Register WebSocket subscription for channel point redemptions
      * Stub implementation — will use EventSub client
      */
-    private async registerEventSub(): Promise<void> {
+    private async registerEventSub(): Promise<boolean> {
+        if (!this.config?.clientSecret) {
+            console.log(
+                '[Twitch Bot] EventSub registration skipped: missing TWITCH_CLIENT_SECRET',
+            );
+            return false;
+        }
+
         // Will be implemented with EventSub API
         // For now, stub
         console.log('[Twitch Bot] EventSub registration stub');
+        return true;
+    }
+
+    /**
+     * Parse and forward a chat message when a court session is running.
+     */
+    public async handleChatMessage(
+        message: string,
+        username: string,
+    ): Promise<void> {
+        const command = this.parseCommand(message, username);
+        if (!command || !this.config) return;
+
+        const sessionId = await this.config.getActiveSessionId();
+        if (!sessionId) return;
+
+        await this.forwardCommand(command, sessionId);
     }
 
     /**
@@ -292,9 +312,10 @@ export function initTwitchBot(config?: BotConfig): TwitchBot {
     // Initialize from env vars if not provided
     const finalConfig: BotConfig | undefined = config || {
         channel: process.env.TWITCH_CHANNEL || '',
+        botUsername: process.env.TWITCH_BOT_USERNAME || undefined,
         botToken: process.env.TWITCH_BOT_TOKEN || '',
         clientId: process.env.TWITCH_CLIENT_ID || '',
-        clientSecret: process.env.TWITCH_CLIENT_SECRET || '',
+        clientSecret: process.env.TWITCH_CLIENT_SECRET || undefined,
         apiBaseUrl: process.env.API_BASE_URL || 'http://localhost:3000',
         getActiveSessionId: async () => null,
     };

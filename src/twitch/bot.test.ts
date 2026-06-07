@@ -1,6 +1,6 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { TwitchBot } from './bot.js';
+import { destroyTwitchBot, initTwitchBot, TwitchBot } from './bot.js';
 
 describe('TwitchBot.parseCommand', () => {
     // Instantiate without credentials → noop mode, but parseCommand still works
@@ -57,11 +57,11 @@ describe('TwitchBot.forwardCommand routing', () => {
         origClientId = process.env.TWITCH_CLIENT_ID;
         origClientSecret = process.env.TWITCH_CLIENT_SECRET;
 
-        // Set env vars so credential check passes when constructing with config
+        // Set only IRC-required env vars; client secret is optional for chat.
         process.env.TWITCH_CHANNEL = 'test';
         process.env.TWITCH_BOT_TOKEN = 'oauth:test';
         process.env.TWITCH_CLIENT_ID = 'cid';
-        process.env.TWITCH_CLIENT_SECRET = 'csec';
+        delete process.env.TWITCH_CLIENT_SECRET;
 
         // Replace fetch with a recorder
         globalThis.fetch = async (url: string | Request | URL, init?: RequestInit) => {
@@ -93,9 +93,9 @@ describe('TwitchBot.forwardCommand routing', () => {
     function makeBot(): TwitchBot {
         return new TwitchBot({
             channel: 'test',
+            botUsername: 'testbot',
             botToken: 'oauth:test',
             clientId: 'cid',
-            clientSecret: 'csec',
             apiBaseUrl: 'http://localhost:3000',
             getActiveSessionId: async () => 'session-abc',
         });
@@ -133,5 +133,89 @@ describe('TwitchBot.forwardCommand routing', () => {
         assert.ok(requests[0].url.includes('/api/court/sessions/session-abc/vote'));
         assert.equal((requests[0].body as any).voteType, 'verdict');
         assert.equal((requests[0].body as any).choice, 'guilty');
+    });
+
+    it('!sentence routes to /vote with voteType sentence', async () => {
+        requests.length = 0;
+        const bot = makeBot();
+        const cmd = bot.parseCommand('!sentence probation', 'viewer4');
+        assert.ok(cmd);
+        await (bot as any).forwardCommand(cmd, 'session-abc');
+        assert.equal(requests.length, 1);
+        assert.ok(requests[0].url.includes('/api/court/sessions/session-abc/vote'));
+        assert.equal((requests[0].body as any).voteType, 'sentence');
+        assert.equal((requests[0].body as any).choice, 'probation');
+    });
+
+    it('does not require TWITCH_CLIENT_SECRET for IRC command forwarding', async () => {
+        requests.length = 0;
+        delete process.env.TWITCH_CLIENT_SECRET;
+        const bot = makeBot();
+        await bot.handleChatMessage('!vote liable', 'viewer5');
+        assert.equal(requests.length, 1);
+        assert.equal((requests[0].body as any).voteType, 'verdict');
+        assert.equal((requests[0].body as any).choice, 'liable');
+    });
+
+    it('ignores valid commands when there is no active session', async () => {
+        requests.length = 0;
+        const bot = new TwitchBot({
+            channel: 'test',
+            botToken: 'oauth:test',
+            clientId: 'cid',
+            apiBaseUrl: 'http://localhost:3000',
+            getActiveSessionId: async () => null,
+        });
+        await bot.handleChatMessage('!vote guilty', 'viewer6');
+        assert.equal(requests.length, 0);
+    });
+});
+
+describe('initTwitchBot env config', () => {
+    let origChannel: string | undefined;
+    let origBotUsername: string | undefined;
+    let origBotToken: string | undefined;
+    let origClientId: string | undefined;
+    let origClientSecret: string | undefined;
+
+    before(() => {
+        origChannel = process.env.TWITCH_CHANNEL;
+        origBotUsername = process.env.TWITCH_BOT_USERNAME;
+        origBotToken = process.env.TWITCH_BOT_TOKEN;
+        origClientId = process.env.TWITCH_CLIENT_ID;
+        origClientSecret = process.env.TWITCH_CLIENT_SECRET;
+    });
+
+    after(() => {
+        if (origChannel === undefined) delete process.env.TWITCH_CHANNEL;
+        else process.env.TWITCH_CHANNEL = origChannel;
+
+        if (origBotUsername === undefined) delete process.env.TWITCH_BOT_USERNAME;
+        else process.env.TWITCH_BOT_USERNAME = origBotUsername;
+
+        if (origBotToken === undefined) delete process.env.TWITCH_BOT_TOKEN;
+        else process.env.TWITCH_BOT_TOKEN = origBotToken;
+
+        if (origClientId === undefined) delete process.env.TWITCH_CLIENT_ID;
+        else process.env.TWITCH_CLIENT_ID = origClientId;
+
+        if (origClientSecret === undefined) delete process.env.TWITCH_CLIENT_SECRET;
+        else process.env.TWITCH_CLIENT_SECRET = origClientSecret;
+
+        destroyTwitchBot();
+    });
+
+    it('initializes from env with bot username and no client secret', () => {
+        destroyTwitchBot();
+        process.env.TWITCH_CHANNEL = 'jury_rigged';
+        process.env.TWITCH_BOT_USERNAME = 'jury_bot';
+        process.env.TWITCH_BOT_TOKEN = 'oauth:test';
+        process.env.TWITCH_CLIENT_ID = 'cid';
+        delete process.env.TWITCH_CLIENT_SECRET;
+
+        const bot = initTwitchBot();
+        assert.equal((bot as any).config.channel, 'jury_rigged');
+        assert.equal((bot as any).config.botUsername, 'jury_bot');
+        assert.equal((bot as any).config.clientSecret, undefined);
     });
 });
