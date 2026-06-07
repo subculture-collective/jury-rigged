@@ -6,28 +6,48 @@ const FALLBACK_MODELS = [
     'mistralai/mistral-small-3.1-24b-instruct:free',
 ];
 
+type LLMProvider = 'openrouter' | 'llama-line' | 'mock';
+
 function runtimeLLMConfig(env: NodeJS.ProcessEnv = process.env): {
-    apiKey: string;
+    provider: LLMProvider;
+    openRouterApiKey: string;
+    llamaLineApiKey: string;
+    llamaLineBaseUrl: string;
     models: string[];
     forceMock: boolean;
 } {
-    const apiKey = (env.OPENROUTER_API_KEY ?? '').trim();
+    const openRouterApiKey = (env.OPENROUTER_API_KEY ?? '').trim();
+    const llamaLineApiKey = (env.LLAMA_LINE_API_KEY ?? env.OLLAMA_API_KEY ?? '').trim();
+    const llamaLineBaseUrl = (env.LLAMA_LINE_BASE_URL ?? env.OLLAMA_BASE_URL ?? '').trim().replace(/\/$/, '');
+    const requestedProvider = (env.LLM_PROVIDER ?? '').trim().toLowerCase();
+    const provider: LLMProvider =
+        requestedProvider === 'llama-line' || requestedProvider === 'llamaline' || requestedProvider === 'ollama' ? 'llama-line'
+        : requestedProvider === 'openrouter' ? 'openrouter'
+        : requestedProvider === 'mock' ? 'mock'
+        : llamaLineBaseUrl && llamaLineApiKey ? 'llama-line'
+        : 'openrouter';
     const modelsRaw = (env.LLM_MODELS ?? '').trim();
+    const singleModel =
+        provider === 'llama-line' ?
+            (env.LLAMA_LINE_MODEL ?? env.OLLAMA_MODEL ?? env.LLM_MODEL ?? '').trim()
+        :   (env.LLM_MODEL ?? '').trim();
     const models =
         modelsRaw ?
             modelsRaw
                 .split(',')
                 .map(m => m.trim())
                 .filter(Boolean)
-        :   FALLBACK_MODELS;
+        : singleModel ? [singleModel]
+        : provider === 'llama-line' ? ['qwen2.5-coder:14b']
+        : FALLBACK_MODELS;
     const runningNodeTests = process.argv.includes('--test');
     const forceMock = env.LLM_MOCK === 'true' || runningNodeTests;
-    return { apiKey, models, forceMock };
+    return { provider, openRouterApiKey, llamaLineApiKey, llamaLineBaseUrl, models, forceMock };
 }
 
 export interface LLMGenerateDetailedResult {
     text: string;
-    provider: 'openrouter' | 'mock';
+    provider: LLMProvider;
     model: string;
     status: 'mock' | 'succeeded' | 'fallback';
     latencyMs: number;
@@ -187,6 +207,89 @@ async function tryModelGenerate(
     }
 }
 
+function parseSseDataEvents(body: string): unknown[] {
+    const events: unknown[] = [];
+    for (const frame of body.split(/\n\n+/)) {
+        const data = frame
+            .split('\n')
+            .filter(line => line.startsWith('data:'))
+            .map(line => line.replace(/^data:\s?/, ''))
+            .join('\n')
+            .trim();
+        if (!data || data === '[DONE]') continue;
+        try {
+            events.push(JSON.parse(data));
+        } catch {
+            // Ignore malformed broker/status frames and let caller fail on no content.
+        }
+    }
+    return events;
+}
+
+function extractChatCompletionText(payload: unknown): string {
+    if (!payload || typeof payload !== 'object') return '';
+    const record = payload as Record<string, unknown>;
+    const choices = Array.isArray(record.choices) ? record.choices : [];
+    const first = choices[0] as Record<string, unknown> | undefined;
+    const message = first?.message as Record<string, unknown> | undefined;
+    const content = message?.content ?? first?.text;
+    return typeof content === 'string' ? content : '';
+}
+
+async function tryLlamaLineGenerate(input: {
+    baseUrl: string;
+    apiKey: string;
+    model: string;
+    messages: LLMGenerateOptions['messages'];
+    temperature: number;
+    maxTokens: number;
+}): Promise<{ success: true; text: string } | { success: false; reason: string }> {
+    if (!input.baseUrl) return { success: false, reason: 'Missing LLAMA_LINE_BASE_URL' };
+    if (!input.apiKey) return { success: false, reason: 'Missing LLAMA_LINE_API_KEY' };
+
+    try {
+        const endpoint = input.baseUrl.endsWith('/v1') ? `${input.baseUrl}/chat/completions` : `${input.baseUrl}/v1/chat/completions`;
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${input.apiKey}`,
+            },
+            body: JSON.stringify({
+                model: input.model,
+                messages: input.messages,
+                temperature: input.temperature,
+                max_tokens: input.maxTokens,
+                stream: false,
+            }),
+        });
+
+        if (!response.ok) return { success: false, reason: `HTTP ${response.status}` };
+
+        const body = await response.text();
+        const contentType = response.headers.get('content-type') ?? '';
+        const payloads =
+            contentType.includes('text/event-stream') || body.trim().startsWith('data:') ?
+                parseSseDataEvents(body)
+            :   [JSON.parse(body)];
+
+        for (const payload of payloads) {
+            const record = payload as Record<string, unknown>;
+            const status = typeof record?.status === 'string' ? record.status : '';
+            if (status === 'queued' || status === 'running') continue;
+            if (status === 'ollama_unavailable' || status === 'dropped_by_admin') {
+                return { success: false, reason: status };
+            }
+            const sanitized = sanitizeDialogue(extractChatCompletionText(payload));
+            if (sanitized) return { success: true, text: sanitized };
+        }
+
+        return { success: false, reason: 'Empty content after sanitization' };
+    } catch (error) {
+        return { success: false, reason: error instanceof Error ? error.message : String(error) };
+    }
+}
+
 export async function llmGenerateDetailed(
     options: LLMGenerateOptions,
 ): Promise<LLMGenerateDetailedResult> {
@@ -198,7 +301,7 @@ export async function llmGenerateDetailed(
         .reverse()
         .find(message => message.role === 'user')?.content;
 
-    if (!config.apiKey || config.forceMock) {
+    if (config.provider === 'mock' || config.forceMock) {
         return {
             text: mockReply(latestUserMessage ?? ''),
             provider: 'mock',
@@ -212,13 +315,25 @@ export async function llmGenerateDetailed(
     // Try each model in sequence until one succeeds
     const errors: string[] = [];
     for (const model of config.models) {
-        const result = await tryModelGenerate(
-            model,
-            config.apiKey,
-            messages,
-            temperature,
-            maxTokens,
-        );
+        const result =
+            config.provider === 'llama-line' ?
+                await tryLlamaLineGenerate({
+                    baseUrl: config.llamaLineBaseUrl,
+                    apiKey: config.llamaLineApiKey,
+                    model,
+                    messages,
+                    temperature,
+                    maxTokens,
+                })
+            : !config.openRouterApiKey ?
+                { success: false as const, reason: 'Missing OPENROUTER_API_KEY' }
+            :   await tryModelGenerate(
+                    model,
+                    config.openRouterApiKey,
+                    messages,
+                    temperature,
+                    maxTokens,
+                );
 
         if (result.success) {
             if (errors.length > 0) {
@@ -229,7 +344,7 @@ export async function llmGenerateDetailed(
             }
             return {
                 text: result.text,
-                provider: 'openrouter',
+                provider: config.provider,
                 model,
                 status: 'succeeded',
                 latencyMs: Date.now() - startedAt,

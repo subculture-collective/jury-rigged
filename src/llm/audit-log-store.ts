@@ -2,7 +2,6 @@ import { randomUUID, createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import postgres, { type Sql } from 'postgres';
 import type { AgentId, CourtPhase, CourtRole, LLMMessage } from '../types.js';
-import { emitPhoenixLLMTrace } from './phoenix.js';
 
 export type LLMAuditStatus = 'mock' | 'succeeded' | 'failed' | 'fallback';
 export type LLMAuditBodyMode = 'off' | 'metadata' | 'full';
@@ -21,7 +20,7 @@ export interface LLMAuditRecordInput {
     speaker: AgentId;
     role: CourtRole;
     source: 'main_turn' | 'objection_classifier';
-    provider: 'openrouter' | 'mock';
+    provider: 'openrouter' | 'llama-line' | 'mock';
     model: string;
     status: LLMAuditStatus;
     messages: LLMMessage[];
@@ -195,9 +194,6 @@ export class InMemoryLLMAuditLogStore implements LLMAuditLogStore {
         this.entries.unshift(entry);
         this.entries.splice(1000);
         this.emitter.emit('entry', withoutBody(entry));
-        void emitPhoenixLLMTrace(input).catch(error => {
-            console.warn(`[phoenix] ${error instanceof Error ? error.message : String(error)}`);
-        });
         return entry;
     }
 
@@ -259,9 +255,6 @@ export class PostgresLLMAuditLogStore implements LLMAuditLogStore {
             `;
         }
         this.emitter.emit('entry', withoutBody(entry));
-        void emitPhoenixLLMTrace(input).catch(error => {
-            console.warn(`[phoenix] ${error instanceof Error ? error.message : String(error)}`);
-        });
         return entry;
     }
 

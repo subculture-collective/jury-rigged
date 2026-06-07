@@ -125,8 +125,12 @@ Copy `.env.example` and tune as needed.
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PORT`               | API port for local non-Docker runs (default in `.env.example`: `3000`)                                                                              |
 | `TRUST_PROXY`        | Express proxy trust setting (`true`, `false`, hop count like `1`, or CIDR/subnet list) used for accurate client IP detection behind reverse proxies |
-| `OPENROUTER_API_KEY` | Required for live LLM calls; empty enables deterministic mock fallback                                                                              |
-| `LLM_MODEL`          | OpenRouter model identifier                                                                                                                         |
+| `LLM_PROVIDER`       | `llama-line`, `openrouter`, or `mock`; defaults to llama-line when broker URL/key are set                                                           |
+| `LLAMA_LINE_BASE_URL` | Preferred local broker endpoint, e.g. `http://10.0.0.50:11434`                                                                                     |
+| `LLAMA_LINE_API_KEY` | Bearer token for llama-line inference requests                                                                                                      |
+| `LLAMA_LINE_MODEL`   | llama-line/Ollama model name, e.g. `qwen2.5-coder:14b`                                                                                              |
+| `OPENROUTER_API_KEY` | Required only when using `LLM_PROVIDER=openrouter`                                                                                                  |
+| `LLM_MODEL`          | Single model fallback; used for OpenRouter and as a generic default                                                                                 |
 | `LLM_MODELS`         | Optional comma-separated model fallback list used by the LLM client                                                                                 |
 | `LLM_MOCK`           | Force mock mode (`true`/`false`)                                                                                                                    |
 | `DATABASE_URL`       | Enables Postgres-backed durable store; omit for in-memory                                                                                           |
@@ -140,11 +144,8 @@ Copy `.env.example` and tune as needed.
 | `LLM_AUDIT_BODY_PERSISTENCE` | `off`, `metadata`, or `full`; only `full` stores prompt/response bodies for admin review          |
 | `LLM_AUDIT_MAX_BODY_CHARS`   | Max stored body length before truncation                                                          |
 | `LLM_AUDIT_RETENTION_DAYS`   | Retention hint for audit data; cleanup jobs can use this value                                    |
-| `PHOENIX_ENABLED`            | Emit admin LLM audit spans to Phoenix over OTLP HTTP when `true`                                  |
-| `PHOENIX_OTLP_ENDPOINT`      | Phoenix OTLP base URL or `/v1/traces` URL, e.g. `http://phoenix:6006/v1/traces`                  |
-| `PHOENIX_PROJECT_NAME`       | Phoenix project name, default `juryrigged`                                                        |
-| `PHOENIX_API_KEY`            | Optional Phoenix bearer token when auth is enabled                                                |
-| `PHOENIX_TRACE_INCLUDE_BODIES` | Include prompt/response bodies in Phoenix spans; keep `false` unless access controls are acceptable |
+
+Phoenix tracing is expected to happen downstream in llama-line. Jury-Rigged keeps its own admin audit feed but does not emit direct Phoenix OTLP spans.
 
 ### Admin auth
 
