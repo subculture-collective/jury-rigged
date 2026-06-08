@@ -75,6 +75,7 @@ export type CourtPhase =
     | 'final_ruling';
 
 export type SessionStatus = 'pending' | 'running' | 'completed' | 'failed';
+export type CourtSessionStatus = SessionStatus;
 
 export interface CourtRoleAssignments {
     judge: AgentId;
@@ -99,7 +100,7 @@ export interface CourtSessionMetadata {
     mode: 'juryrigged';
     casePrompt: string;
     caseType: CaseType;
-    caseSource?: 'generated' | 'operator' | 'twitch';
+    caseSource?: 'generated' | 'operator' | 'twitch' | 'public_page';
     queueItemId?: string;
     sentenceOptions: string[];
     phaseStartedAt?: string;
@@ -161,6 +162,38 @@ export interface CourtSession {
     failureReason?: string;
 }
 
+export interface TranscriptSearchResult {
+    id: string;
+    topic: string;
+    status: CourtSessionStatus;
+    phase: CourtPhase;
+    caseType?: string;
+    casePrompt?: string;
+    createdAt: string;
+    startedAt?: string;
+    completedAt?: string;
+    turnCount: number;
+}
+
+export interface TranscriptSearchResponse {
+    query: string;
+    results: TranscriptSearchResult[];
+    count: number;
+}
+
+export type AdminTriggerKind =
+    | 'message'
+    | 'phase_stinger'
+    | 'evidence_stinger'
+    | 'objection_stinger';
+
+export interface AdminTriggerRequest {
+    sessionId: string;
+    kind: AdminTriggerKind;
+    title: string;
+    message: string;
+}
+
 export type ModerationReasonCode =
     | 'hate_speech'
     | 'violence'
@@ -201,7 +234,8 @@ export type CourtEventType =
     // Phase 7 additions
     | 'render_directive'
     | 'witness_statement'
-    | 'case_file_generated';
+    | 'case_file_generated'
+    | 'admin_trigger';
 
 export interface CourtEvent {
     id: string;

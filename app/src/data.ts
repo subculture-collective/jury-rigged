@@ -3,6 +3,8 @@ export type ViewKey =
   | 'overlay'
   | 'directory'
   | 'details'
+  | 'prompt'
+  | 'transcripts'
   | 'voting'
   | 'about';
 
@@ -59,6 +61,8 @@ export const views: Array<{ key: ViewKey; label: string; note: string }> = [
   { key: 'overlay', label: 'Broadcast Overlay', note: '16:9 live-session frame' },
   { key: 'directory', label: 'Case Directory', note: 'Active docket list' },
   { key: 'details', label: 'Case Details', note: 'Evidence + timeline' },
+  { key: 'prompt', label: 'Submit Prompt', note: 'Public queue + ETA' },
+  { key: 'transcripts', label: 'Transcripts', note: 'Search public case records' },
   { key: 'voting', label: 'Jury Voting', note: 'Ballot + eligibility' },
   { key: 'about', label: 'About / How It Works', note: 'Workflow explainer' },
 ];

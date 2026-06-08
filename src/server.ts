@@ -14,6 +14,8 @@ import {
 import {
     CaseQueue,
     CaseQueueValidationError,
+    estimateQueueStartMinutes,
+    validateCasePrompt,
     type CaseQueueItem,
     type CaseQueueSource,
 } from './court/case-queue.js';
@@ -66,11 +68,14 @@ import {
     type LoadedReplayRecording,
 } from './replay/session-replay.js';
 import type {
+    AdminTriggerKind,
+    AdminTriggerRequest,
     AgentId,
     CaseType,
     CourtPhase,
     GenreTag,
     PromptBankEntry,
+    TranscriptSearchResponse,
 } from './types.js';
 
 const validPhases: CourtPhase[] = [
@@ -83,6 +88,75 @@ const validPhases: CourtPhase[] = [
     'sentence_vote',
     'final_ruling',
 ];
+
+const validAdminTriggerKinds: AdminTriggerKind[] = [
+    'message',
+    'phase_stinger',
+    'evidence_stinger',
+    'objection_stinger',
+];
+
+const PUBLIC_QUEUE_NONCE_TTL_MS = 10 * 60 * 1000;
+const PUBLIC_QUEUE_DUPLICATE_TTL_MS = 15 * 60 * 1000;
+
+async function verifyTurnstile(token: string, ip?: string): Promise<boolean> {
+    const secret = process.env.TURNSTILE_SECRET_KEY?.trim();
+    if (!secret) return false;
+
+    const body = new URLSearchParams({ secret, response: token });
+    if (ip) body.set('remoteip', ip);
+
+    try {
+        const response = await fetch(
+            'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+            { method: 'POST', body },
+        );
+        const json = (await response.json()) as { success?: boolean };
+        return json.success === true;
+    } catch (error) {
+        logger.warn('[public-queue] Turnstile verification failed', { error });
+        return false;
+    }
+}
+
+function isAdminTriggerKind(value: unknown): value is AdminTriggerKind {
+    return (
+        typeof value === 'string' &&
+        validAdminTriggerKinds.includes(value as AdminTriggerKind)
+    );
+}
+
+function normalizeAdminTriggerRequest(
+    body: unknown,
+): AdminTriggerRequest | undefined {
+    const payload =
+        body && typeof body === 'object' ?
+            (body as Record<string, unknown>)
+        :   undefined;
+
+    if (!payload) return undefined;
+
+    const sessionId = payload.sessionId;
+    const kind = payload.kind;
+    const title = payload.title;
+    const message = payload.message;
+
+    if (
+        typeof sessionId !== 'string' ||
+        !isAdminTriggerKind(kind) ||
+        typeof title !== 'string' ||
+        typeof message !== 'string'
+    ) {
+        return undefined;
+    }
+
+    return {
+        sessionId: sessionId.trim(),
+        kind,
+        title: title.trim().slice(0, 80),
+        message: message.trim().slice(0, 280),
+    };
+}
 
 const ADMIN_COOKIE_NAME = 'jr_admin_session';
 const ADMIN_SESSION_MAX_AGE_SECONDS = 12 * 60 * 60;
@@ -393,6 +467,7 @@ interface SessionRouteDeps {
     replay?: LoadedReplayRecording;
     onLlmFallback?: RunCourtSessionOptions['onLlmFallback'];
     onLlmSuccess?: RunCourtSessionOptions['onLlmSuccess'];
+    onSessionCompleted?: (sessionId: string) => void | Promise<void>;
 }
 
 interface CreateCourtSessionInput {
@@ -400,7 +475,7 @@ interface CreateCourtSessionInput {
     caseType?: unknown;
     participants?: unknown;
     sentenceOptions?: unknown;
-    caseSource?: 'generated' | 'operator' | 'twitch';
+    caseSource?: CaseQueueSource;
     queueItemId?: string;
 }
 
@@ -544,6 +619,11 @@ async function createCourtSession(
             auditLogStore: deps.auditLogStore,
             onLlmFallback: deps.onLlmFallback,
             onLlmSuccess: deps.onLlmSuccess,
+        }).then(async () => {
+            const completed = await deps.store.getSession(session.id);
+            if (completed?.status === 'completed') {
+                await deps.onSessionCompleted?.(session.id);
+            }
         });
     }
 
@@ -905,6 +985,7 @@ function registerApiRoutes(
         simulationControl: SimulationControlState;
         onLlmFallback?: RunCourtSessionOptions['onLlmFallback'];
         onLlmSuccess?: RunCourtSessionOptions['onLlmSuccess'];
+        onSessionCompleted?: (sessionId: string) => void | Promise<void>;
     },
 ): void {
     const adminGet = requireAdmin(deps.adminAuth);
@@ -1074,6 +1155,35 @@ function registerApiRoutes(
         req.on('close', unsubscribe);
     });
 
+    app.post('/api/admin/triggers', adminPost, async (req, res) => {
+        const trigger = normalizeAdminTriggerRequest(req.body);
+        if (!trigger || !trigger.sessionId || !trigger.title || !trigger.message) {
+            return sendError(
+                res,
+                400,
+                'INVALID_TRIGGER_PAYLOAD',
+                'invalid trigger payload',
+            );
+        }
+
+        const session = await deps.store.getSession(trigger.sessionId);
+        if (!session) {
+            return sendError(
+                res,
+                404,
+                'SESSION_NOT_FOUND',
+                'session not found',
+            );
+        }
+
+        deps.store.emitEvent(trigger.sessionId, 'admin_trigger', {
+            ...trigger,
+            emittedAt: new Date().toISOString(),
+        });
+
+        return res.status(202).json({ ok: true });
+    });
+
     app.get('/api/metrics', adminGet, async (_req, res) => {
         try {
             const metrics = await renderMetrics();
@@ -1092,6 +1202,21 @@ function registerApiRoutes(
         res.json({ sessions });
     });
 
+    app.get('/api/public/transcripts', audienceInteractionLimiter, async (req, res) => {
+        const query = (typeof req.query.q === 'string' ? req.query.q : '')
+            .trim()
+            .slice(0, 120);
+        const rawLimit = typeof req.query.limit === 'string' ? Number.parseInt(req.query.limit, 10) : 25;
+        const limit = Number.isFinite(rawLimit) ? rawLimit : 25;
+        const results = await deps.store.searchTranscripts(query, limit);
+        const response: TranscriptSearchResponse = {
+            query,
+            results,
+            count: results.length,
+        };
+        res.json(response);
+    });
+
     const getRunningOrPendingSession = async () => {
         const sessions = await deps.store.listSessions();
         return sessions.find(
@@ -1102,8 +1227,18 @@ function registerApiRoutes(
 
     const queueSnapshot = async () => {
         const active = await getRunningOrPendingSession();
+        const publicBaseUrl = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+        const streamUrl = publicBaseUrl ? `${publicBaseUrl}/app/?view=overlay` : '/app/?view=overlay';
+        const transcriptsUrl = publicBaseUrl ? `${publicBaseUrl}/app/?view=transcripts` : '/app/?view=transcripts';
         return {
-            ...deps.caseQueue.snapshot(active?.id ?? null),
+            ...deps.caseQueue.snapshot(active?.id ?? null, {
+                estimatedCaseMinutes: parsePositiveInt(
+                    process.env.CASE_QUEUE_ESTIMATED_CASE_MINUTES,
+                    12,
+                ),
+                streamUrl,
+                transcriptsUrl,
+            }),
             automationEnabled: deps.autoGenerateCases,
             automationPaused: deps.simulationControl.automationPaused,
             errorState: deps.simulationControl.errorState,
@@ -1112,6 +1247,58 @@ function registerApiRoutes(
             fallbackThreshold: deps.simulationControl.fallbackThreshold,
             generatedFallback: deps.autoGenerateCases && deps.caseQueue.queued().length === 0,
         };
+    };
+
+    const publicQueueSnapshot = async () => {
+        const snapshot = await queueSnapshot();
+        return {
+            queuedCount: snapshot.queuedCount,
+            runningSessionId: snapshot.runningSessionId,
+            automationEnabled: snapshot.automationEnabled,
+            generatedFallback: snapshot.generatedFallback,
+            queue: snapshot.queue
+                .filter(item => item.status === 'queued')
+                .map(({ submittedBy: _submittedBy, ...item }) => item),
+        };
+    };
+
+    const publicQueueNonces = new Map<string, number>();
+    const recentPublicPrompts = new Map<string, number>();
+
+    const prunePublicQueueSecurityCaches = () => {
+        const now = Date.now();
+        for (const [nonce, expiresAt] of publicQueueNonces) {
+            if (expiresAt <= now) publicQueueNonces.delete(nonce);
+        }
+        for (const [key, expiresAt] of recentPublicPrompts) {
+            if (expiresAt <= now) recentPublicPrompts.delete(key);
+        }
+    };
+
+    const consumePublicQueueNonce = (nonce: unknown): boolean => {
+        if (process.env.PUBLIC_QUEUE_ALLOW_NONCE_SUBMISSIONS !== 'true') return false;
+        if (typeof nonce !== 'string' || !nonce.trim()) return false;
+        prunePublicQueueSecurityCaches();
+        const expiresAt = publicQueueNonces.get(nonce);
+        publicQueueNonces.delete(nonce);
+        return typeof expiresAt === 'number' && expiresAt > Date.now();
+    };
+
+    const publicPromptDuplicateKey = (req: Request, prompt: string): string => {
+        const ip = req.ip || req.socket.remoteAddress || 'unknown';
+        const digest = crypto
+            .createHash('sha256')
+            .update(prompt.toLowerCase())
+            .digest('base64url');
+        return `${ip}:${digest}`;
+    };
+
+    const isDuplicatePublicPrompt = (req: Request, prompt: string): boolean => {
+        prunePublicQueueSecurityCaches();
+        const key = publicPromptDuplicateKey(req, prompt);
+        if (recentPublicPrompts.has(key)) return true;
+        recentPublicPrompts.set(key, Date.now() + PUBLIC_QUEUE_DUPLICATE_TTL_MS);
+        return false;
     };
 
     const enqueueCase = (input: {
@@ -1159,6 +1346,25 @@ function registerApiRoutes(
 
     app.get('/api/court/case-queue', async (_req, res) => {
         res.json(await queueSnapshot());
+    });
+
+    app.get('/api/public/case-queue', audienceInteractionLimiter, async (_req, res) => {
+        res.json(await publicQueueSnapshot());
+    });
+
+    app.get('/api/public/case-queue/nonce', audienceInteractionLimiter, (_req, res) => {
+        if (process.env.PUBLIC_QUEUE_ALLOW_NONCE_SUBMISSIONS !== 'true') {
+            return sendError(
+                res,
+                404,
+                'PUBLIC_QUEUE_NONCE_DISABLED',
+                'Public queue nonce submissions are disabled.',
+            );
+        }
+        prunePublicQueueSecurityCaches();
+        const nonce = crypto.randomUUID();
+        publicQueueNonces.set(nonce, Date.now() + PUBLIC_QUEUE_NONCE_TTL_MS);
+        res.json({ nonce, expiresInSeconds: PUBLIC_QUEUE_NONCE_TTL_MS / 1000 });
     });
 
     app.get('/api/admin/simulation-control', adminGet, async (_req, res) => {
@@ -1226,6 +1432,65 @@ function registerApiRoutes(
         },
     );
 
+    app.post('/api/public/case-queue', audienceInteractionLimiter, async (req, res) => {
+        const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt : '';
+        const turnstileToken =
+            typeof req.body?.turnstileToken === 'string' ? req.body.turnstileToken : '';
+        const nonceValid = consumePublicQueueNonce(req.body?.nonce);
+        const turnstileValid =
+            turnstileToken ? await verifyTurnstile(turnstileToken, req.ip) : false;
+
+        if (!nonceValid && !turnstileValid) {
+            return sendError(
+                res,
+                403,
+                'PUBLIC_QUEUE_VERIFICATION_REQUIRED',
+                'Public submissions require a fresh verification token.',
+            );
+        }
+
+        try {
+            const normalizedPrompt = validateCasePrompt(prompt);
+            const moderation = moderateContent(normalizedPrompt);
+            if (moderation.flagged) {
+                throw new CaseQueueValidationError('prompt violates safety policy');
+            }
+
+            if (isDuplicatePublicPrompt(req, normalizedPrompt)) {
+                return sendError(
+                    res,
+                    409,
+                    'DUPLICATE_PUBLIC_PROMPT',
+                    'This prompt was already submitted recently.',
+                );
+            }
+
+            const item = deps.caseQueue.enqueue({
+                prompt: normalizedPrompt,
+                source: 'public_page',
+                submittedBy: 'public-page',
+            });
+
+            const queued = deps.caseQueue.queued();
+            const position = queued.findIndex(candidate => candidate.id === item.id) + 1;
+            return res.status(202).json({
+                item,
+                position,
+                estimatedStartMinutes: estimateQueueStartMinutes(
+                    deps.caseQueue,
+                    item.id,
+                    parsePositiveInt(process.env.CASE_QUEUE_ESTIMATED_CASE_MINUTES, 12),
+                ),
+                snapshot: await publicQueueSnapshot(),
+            });
+        } catch (error) {
+            if (error instanceof CaseQueueValidationError) {
+                return sendError(res, 400, 'CASE_PROMPT_REJECTED', error.message);
+            }
+            throw error;
+        }
+    });
+
     app.post('/api/admin/case-queue', adminPost, async (req, res) => {
         try {
             const item = enqueueCase({
@@ -1272,6 +1537,19 @@ function registerApiRoutes(
                 404,
                 'SESSION_NOT_FOUND',
                 'Session not found',
+            );
+        }
+        return res.json({ session });
+    });
+
+    app.get('/api/public/transcripts/:id', audienceInteractionLimiter, async (req, res) => {
+        const session = await deps.store.getSession(req.params.id);
+        if (!session || session.status !== 'completed') {
+            return sendError(
+                res,
+                404,
+                'TRANSCRIPT_NOT_FOUND',
+                'Transcript not found',
             );
         }
         return res.json({ session });
@@ -1645,6 +1923,7 @@ export async function createServerApp(
     app.use(express.urlencoded({ extended: false }));
 
     const adminAuth = resolveAdminAuthConfig();
+    let twitchBot: ReturnType<typeof initTwitchBot> | null = null;
 
     registerApiRoutes(app, {
         store,
@@ -1662,6 +1941,7 @@ export async function createServerApp(
         simulationControl,
         onLlmFallback,
         onLlmSuccess,
+        onSessionCompleted: sessionId => twitchBot?.announceTranscriptLink(sessionId),
     });
 
     let caseSchedulerInFlight = false;
@@ -1739,7 +2019,7 @@ export async function createServerApp(
 
     // Start Twitch bot (noop if credentials absent)
     if (options.startTwitchBot !== false) {
-        const twitchBot = initTwitchBot({
+        twitchBot = initTwitchBot({
             channel: process.env.TWITCH_CHANNEL ?? '',
             botUsername: process.env.TWITCH_BOT_USERNAME || undefined,
             botToken: process.env.TWITCH_BOT_TOKEN ?? '',
@@ -1806,6 +2086,11 @@ export async function createServerApp(
                 auditLogStore,
                 onLlmFallback,
                 onLlmSuccess,
+            }).then(async () => {
+                const completed = await store.getSession(sessionId);
+                if (completed?.status === 'completed') {
+                    await twitchBot?.announceTranscriptLink(sessionId);
+                }
             });
         }
     }

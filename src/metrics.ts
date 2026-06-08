@@ -264,6 +264,10 @@ export function instrumentCourtSessionStore(
             baseStore.getSession(sessionId),
         ),
 
+        searchTranscripts: wrapWithMetrics('search_transcripts', (query, limit) =>
+            baseStore.searchTranscripts(query, limit),
+        ),
+
         startSession: wrapWithMetrics(
             'start_session',
             sessionId => baseStore.startSession(sessionId),

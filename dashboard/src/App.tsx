@@ -59,6 +59,7 @@ type DashboardTabId =
 
 const loadModerationQueue = () => import('./components/ModerationQueue');
 const loadManualControls = () => import('./components/ManualControls');
+const loadAdminTriggers = () => import('./components/AdminTriggers');
 const loadCaseQueue = () => import('./components/CaseQueue');
 const loadAnalytics = () => import('./components/Analytics');
 const loadLLMAuditLog = () => import('./components/LLMAuditLog');
@@ -72,6 +73,11 @@ const ModerationQueue = lazy(async () => {
 const ManualControls = lazy(async () => {
     const module = await loadManualControls();
     return { default: module.ManualControls };
+});
+
+const AdminTriggers = lazy(async () => {
+    const module = await loadAdminTriggers();
+    return { default: module.AdminTriggers };
 });
 
 const CaseQueue = lazy(async () => {
@@ -127,7 +133,7 @@ const TABS: DashboardTab[] = [
         id: 'controls',
         label: 'Manual Controls',
         icon: '🎛️',
-        preload: loadManualControls,
+        preload: () => Promise.all([loadManualControls(), loadAdminTriggers()]),
     },
     {
         id: 'caseQueue',
@@ -497,7 +503,10 @@ function App() {
                             <TabFallback message='Loading manual controls...' />
                         }
                     >
-                        <ManualControls sessionId={sessionId} />
+                        <div className='space-y-5'>
+                            <ManualControls sessionId={sessionId} />
+                            <AdminTriggers sessionId={sessionId} />
+                        </div>
                     </Suspense>
                 );
             case 'caseQueue':

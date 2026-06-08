@@ -14,6 +14,7 @@ import type {
     CourtSession,
     CourtSessionMetadata,
     CourtTurn,
+    TranscriptSearchResult,
 } from '../types.js';
 import { runMigrations } from '../db/migrations.js';
 
@@ -87,6 +88,51 @@ function pollTypeForPhase(
     return undefined;
 }
 
+function compareTranscriptSessions(
+    left: { completedAt?: string; createdAt: string },
+    right: { completedAt?: string; createdAt: string },
+): number {
+    const leftCompletedAt = left.completedAt ?? '';
+    const rightCompletedAt = right.completedAt ?? '';
+
+    if (leftCompletedAt && rightCompletedAt) {
+        return rightCompletedAt.localeCompare(leftCompletedAt);
+    }
+
+    if (leftCompletedAt) return -1;
+    if (rightCompletedAt) return 1;
+
+    return right.createdAt.localeCompare(left.createdAt);
+}
+
+function mapSessionToTranscriptSearchResult(
+    session: Pick<
+        CourtSession,
+        | 'id'
+        | 'topic'
+        | 'status'
+        | 'phase'
+        | 'metadata'
+        | 'createdAt'
+        | 'startedAt'
+        | 'completedAt'
+        | 'turnCount'
+    >,
+): TranscriptSearchResult {
+    return {
+        id: session.id,
+        topic: session.topic,
+        status: session.status,
+        phase: session.phase,
+        caseType: session.metadata.caseType,
+        casePrompt: session.metadata.casePrompt,
+        createdAt: session.createdAt,
+        startedAt: session.startedAt,
+        completedAt: session.completedAt,
+        turnCount: session.turnCount,
+    };
+}
+
 export interface CourtSessionStore {
     createSession(input: {
         topic: string;
@@ -95,6 +141,10 @@ export interface CourtSessionStore {
     }): Promise<CourtSession>;
     listSessions(): Promise<CourtSession[]>;
     getSession(sessionId: string): Promise<CourtSession | undefined>;
+    searchTranscripts(
+        query: string,
+        limit?: number,
+    ): Promise<TranscriptSearchResult[]>;
     startSession(sessionId: string): Promise<CourtSession>;
     setPhase(
         sessionId: string,
@@ -187,6 +237,35 @@ class InMemoryCourtSessionStore implements CourtSessionStore {
     async getSession(sessionId: string): Promise<CourtSession | undefined> {
         const session = this.sessions.get(sessionId);
         return session ? deepCopy(session) : undefined;
+    }
+
+    async searchTranscripts(
+        query: string,
+        limit = 25,
+    ): Promise<TranscriptSearchResult[]> {
+        const normalized = query.trim().toLowerCase();
+        const cappedLimit = Math.max(1, Math.min(Math.trunc(limit), 50));
+        const sessions = await this.listSessions();
+
+        return sessions
+            .filter(session => session.status === 'completed')
+            .filter(session => {
+                if (!normalized) return true;
+
+                const haystack = [
+                    session.id,
+                    session.topic,
+                    session.metadata.casePrompt,
+                ]
+                    .filter(Boolean)
+                    .join(' ')
+                    .toLowerCase();
+
+                return haystack.includes(normalized);
+            })
+            .sort(compareTranscriptSessions)
+            .slice(0, cappedLimit)
+            .map(mapSessionToTranscriptSearchResult);
     }
 
     async startSession(sessionId: string): Promise<CourtSession> {
@@ -641,6 +720,47 @@ class PostgresCourtSessionStore implements CourtSessionStore {
 
         const turns = await this.fetchTurns(sessionId);
         return this.mapSession(row, turns);
+    }
+
+    async searchTranscripts(
+        query: string,
+        limit = 25,
+    ): Promise<TranscriptSearchResult[]> {
+        const normalized = query.trim().toLowerCase();
+        const cappedLimit = Math.max(1, Math.min(Math.trunc(limit), 50));
+
+        const rows = normalized ? await this.db<SessionRow[]>`
+            SELECT *
+            FROM court_sessions
+            WHERE status = 'completed'
+              AND (
+                   lower(id::text) LIKE ${`%${normalized}%`}
+                OR lower(topic) LIKE ${`%${normalized}%`}
+                OR lower(coalesce(metadata ->> 'casePrompt', '')) LIKE ${`%${normalized}%`}
+              )
+            ORDER BY completed_at DESC NULLS LAST, created_at DESC
+            LIMIT ${cappedLimit}
+        ` : await this.db<SessionRow[]>`
+            SELECT *
+            FROM court_sessions
+            WHERE status = 'completed'
+            ORDER BY completed_at DESC NULLS LAST, created_at DESC
+            LIMIT ${cappedLimit}
+        `;
+
+        return rows.map(row =>
+            mapSessionToTranscriptSearchResult({
+                id: row.id,
+                topic: row.topic,
+                status: row.status,
+                phase: row.phase,
+                metadata: row.metadata,
+                createdAt: this.mustIso(row.created_at),
+                startedAt: this.optionalIso(row.started_at),
+                completedAt: this.optionalIso(row.completed_at),
+                turnCount: row.turn_count,
+            }),
+        );
     }
 
     async startSession(sessionId: string): Promise<CourtSession> {

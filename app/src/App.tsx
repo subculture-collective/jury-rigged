@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   cases,
   detailTabs,
@@ -81,13 +81,35 @@ type LiveSession = {
   completedAt?: string;
 };
 
+type TranscriptSearchResult = {
+  id: string;
+  topic: string;
+  status: string;
+  phase: string;
+  caseType?: string;
+  casePrompt?: string;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  turnCount: number;
+};
+
+type TranscriptSearchResponse = {
+  query: string;
+  results: TranscriptSearchResult[];
+  count: number;
+};
+
 type CaseQueueItem = {
   id: string;
   prompt: string;
-  source: 'twitch' | 'operator' | 'generated';
+  source: 'twitch' | 'operator' | 'generated' | 'public_page';
   submittedBy?: string;
   status: 'queued' | 'running' | 'completed' | 'skipped';
   sessionId?: string;
+  estimatedStartMinutes?: number;
+  streamUrl?: string;
+  transcriptsUrl?: string;
   createdAt: string;
 };
 
@@ -99,6 +121,12 @@ type CaseQueueSnapshot = {
   generatedFallback: boolean;
 };
 
+type PublicQueueSubmission = {
+  item: CaseQueueItem;
+  position: number;
+  estimatedStartMinutes?: number;
+};
+
 type SidebarCard = {
   id: string;
   eyebrow: string;
@@ -108,10 +136,32 @@ type SidebarCard = {
   footer?: string;
 };
 
+type LiveOverlayEvent = {
+  type: string;
+  payload?: unknown;
+  receivedAt: string;
+};
+
+type OverlayStinger = {
+  title: string;
+  message: string;
+  tone: 'cyan' | 'gold' | 'purple';
+};
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (container: HTMLElement, options: { sitekey: string; callback: (token: string) => void; 'expired-callback'?: () => void; 'error-callback'?: () => void }) => string;
+      reset: (widgetId?: string) => void;
+    };
+  }
+}
+
 const VIEW_PARAM = 'view';
 const OVERLAY_DISCOVERY_MS = 5_000;
 const OVERLAY_ROTATION_MS = 7_000;
 const OVERLAY_TRANSCRIPT_LIMIT = 120;
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined;
 
 function isViewKey(value: string | null): value is ViewKey {
   return (
@@ -119,9 +169,16 @@ function isViewKey(value: string | null): value is ViewKey {
     value === 'overlay' ||
     value === 'directory' ||
     value === 'details' ||
+    value === 'prompt' ||
+    value === 'transcripts' ||
     value === 'voting' ||
     value === 'about'
   );
+}
+
+function getCaseParam() {
+  if (typeof window === 'undefined') return '';
+  return new URLSearchParams(window.location.search).get('case') ?? '';
 }
 
 function getInitialView(): ViewKey {
@@ -249,6 +306,44 @@ function normalizeSession(raw: unknown): LiveSession | null {
   };
 }
 
+function normalizeTranscriptSearchResult(raw: unknown): TranscriptSearchResult | null {
+  if (!isRecord(raw)) return null;
+  const id = readString(raw.id);
+  const topic = readString(raw.topic);
+  const status = readString(raw.status);
+  const phase = readString(raw.phase);
+  const createdAt = readString(raw.createdAt);
+  const turnCount = readNumber(raw.turnCount);
+  if (!id || !topic || !status || !phase || !createdAt || turnCount === undefined) return null;
+  return {
+    id,
+    topic,
+    status,
+    phase,
+    createdAt,
+    turnCount,
+    caseType: readString(raw.caseType),
+    casePrompt: readString(raw.casePrompt),
+    startedAt: readString(raw.startedAt),
+    completedAt: readString(raw.completedAt),
+  };
+}
+
+function normalizeTranscriptSearchResponse(raw: unknown): TranscriptSearchResponse | null {
+  if (!isRecord(raw)) return null;
+  const results = Array.isArray(raw.results)
+    ? raw.results.flatMap((entry): TranscriptSearchResult[] => {
+        const result = normalizeTranscriptSearchResult(entry);
+        return result ? [result] : [];
+      })
+    : [];
+  return {
+    query: readString(raw.query) ?? '',
+    results,
+    count: readNumber(raw.count) ?? results.length,
+  };
+}
+
 function normalizeCaseQueueSnapshot(raw: unknown): CaseQueueSnapshot | null {
   if (!isRecord(raw)) return null;
   const queue = Array.isArray(raw.queue)
@@ -260,7 +355,7 @@ function normalizeCaseQueueSnapshot(raw: unknown): CaseQueueSnapshot | null {
         const status = readString(item.status);
         const createdAt = readString(item.createdAt);
         if (!id || !prompt || !createdAt) return [];
-        if (source !== 'twitch' && source !== 'operator' && source !== 'generated') return [];
+        if (source !== 'twitch' && source !== 'operator' && source !== 'generated' && source !== 'public_page') return [];
         if (status !== 'queued' && status !== 'running' && status !== 'completed' && status !== 'skipped') return [];
         return [{
           id,
@@ -270,6 +365,9 @@ function normalizeCaseQueueSnapshot(raw: unknown): CaseQueueSnapshot | null {
           createdAt,
           submittedBy: readString(item.submittedBy),
           sessionId: readString(item.sessionId),
+          estimatedStartMinutes: readNumber(item.estimatedStartMinutes),
+          streamUrl: readString(item.streamUrl),
+          transcriptsUrl: readString(item.transcriptsUrl),
         }];
       })
     : [];
@@ -280,6 +378,19 @@ function normalizeCaseQueueSnapshot(raw: unknown): CaseQueueSnapshot | null {
     runningSessionId: readString(raw.runningSessionId) ?? null,
     automationEnabled: raw.automationEnabled !== false,
     generatedFallback: raw.generatedFallback === true,
+  };
+}
+
+function normalizePublicQueueSubmission(raw: unknown): PublicQueueSubmission | null {
+  if (!isRecord(raw) || !isRecord(raw.item)) return null;
+  const snapshot = normalizeCaseQueueSnapshot({ queue: [raw.item], queuedCount: 1, runningSessionId: null });
+  const item = snapshot?.queue[0];
+  const position = readNumber(raw.position);
+  if (!item || position === undefined) return null;
+  return {
+    item,
+    position,
+    estimatedStartMinutes: readNumber(raw.estimatedStartMinutes),
   };
 }
 
@@ -359,6 +470,84 @@ function latestDirectiveLabel(session: LiveSession) {
   return readString(directive.effect) ?? readString(directive.camera) ?? 'Directive active';
 }
 
+function directiveStingerLabel(effect: string) {
+  const normalized = effect.replaceAll('_', ' ').toUpperCase();
+  if (effect.includes('objection')) return 'OBJECTION';
+  if (effect.includes('hold')) return 'HOLD IT';
+  if (effect.includes('take')) return 'TAKE THAT';
+  if (effect.includes('evidence') || effect.includes('present')) return 'EVIDENCE PRESENTED';
+  return normalized;
+}
+
+function stingerFromEvent(event: LiveOverlayEvent | null): OverlayStinger | null {
+  if (!event || !isRecord(event.payload)) return null;
+  const payload = event.payload;
+
+  if (event.type === 'admin_trigger') {
+    const title = readString(payload.title)?.trim();
+    const message = readString(payload.message)?.trim();
+    const kind = readString(payload.kind);
+    if (!title || !message) return null;
+    return {
+      title,
+      message,
+      tone: kind === 'objection_stinger' ? 'purple' : kind === 'evidence_stinger' ? 'gold' : 'cyan',
+    };
+  }
+
+  if (event.type === 'render_directive' && isRecord(payload.directive)) {
+    const effect = readString(payload.directive.effect);
+    if (!effect) return null;
+    return {
+      title: directiveStingerLabel(effect),
+      message: `Render directive received during ${prettyLabel(readString(payload.phase) ?? 'live')} phase.`,
+      tone: effect.includes('objection') || effect.includes('hold') ? 'purple' : 'gold',
+    };
+  }
+
+  if (event.type === 'phase_changed') {
+    const phase = readString(payload.phase);
+    if (!phase) return null;
+    return {
+      title: `${prettyLabel(phase)} phase`,
+      message: 'The courtroom has moved to a new phase.',
+      tone: 'cyan',
+    };
+  }
+
+  if (event.type === 'case_file_generated') {
+    return {
+      title: 'Case file locked',
+      message: 'Evidence, roles, and witness statements are ready for broadcast.',
+      tone: 'gold',
+    };
+  }
+
+  if (event.type === 'evidence_revealed') {
+    return {
+      title: 'Evidence revealed',
+      message: readString(payload.evidenceText) ?? 'A new exhibit entered the record.',
+      tone: 'gold',
+    };
+  }
+
+  if (event.type === 'objection_count_changed') {
+    return {
+      title: 'Objection logged',
+      message: `${String(readNumber(payload.count) ?? 0)} objections on the court record.`,
+      tone: 'purple',
+    };
+  }
+
+  return null;
+}
+
+function stingerToneClass(tone: OverlayStinger['tone']) {
+  if (tone === 'gold') return 'text-[hsl(var(--gold))] border-[hsl(var(--gold)/0.45)] shadow-[0_24px_90px_hsl(var(--gold)/0.16)]';
+  if (tone === 'purple') return 'text-[hsl(var(--purple))] border-[hsl(var(--purple)/0.45)] shadow-[0_24px_90px_hsl(var(--purple)/0.18)]';
+  return 'text-[hsl(var(--cyan))] border-[hsl(var(--cyan)/0.45)] shadow-[0_24px_90px_hsl(var(--cyan)/0.16)]';
+}
+
 function formatDuration(startedAt?: string, now = Date.now()) {
   if (!startedAt) return '00:00:00';
   const elapsed = Math.max(0, now - Date.parse(startedAt));
@@ -409,6 +598,7 @@ function useLiveOverlaySession() {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+  const [lastEvent, setLastEvent] = useState<LiveOverlayEvent | null>(null);
 
   const refreshSessionList = useCallback(async () => {
     try {
@@ -428,6 +618,7 @@ function useLiveOverlaySession() {
         setSession(null);
         setConnected(false);
         setError(null);
+        setLastEvent(null);
         setLoading(false);
       }
     } catch (listError) {
@@ -452,6 +643,7 @@ function useLiveOverlaySession() {
     let cancelled = false;
     setLoading(true);
     setSession(null);
+    setLastEvent(null);
 
     const syncSession = async () => {
       try {
@@ -498,6 +690,9 @@ function useLiveOverlaySession() {
 
       try {
         const message = JSON.parse(event.data) as { type?: string; payload?: unknown };
+        if (typeof message.type === 'string' && message.type !== 'snapshot') {
+          setLastEvent({ type: message.type, payload: message.payload, receivedAt: new Date().toISOString() });
+        }
         if (message.type === 'snapshot' && isRecord(message.payload)) {
           const nextSession = normalizeSession(message.payload.session);
           if (nextSession?.status === 'running') {
@@ -526,16 +721,16 @@ function useLiveOverlaySession() {
     };
   }, [sessionId]);
 
-  return { session, loading, connected, error, lastUpdatedAt };
+  return { session, loading, connected, error, lastUpdatedAt, lastEvent };
 }
 
-function useCaseQueue() {
+function useCaseQueue(endpoint = '/api/public/case-queue') {
   const [snapshot, setSnapshot] = useState<CaseQueueSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const response = await fetch('/api/court/case-queue');
+      const response = await fetch(endpoint);
       if (!response.ok) throw new Error(`Unexpected status ${response.status}`);
       const next = normalizeCaseQueueSnapshot(await response.json());
       setSnapshot(next);
@@ -544,7 +739,7 @@ function useCaseQueue() {
       console.error('Failed to load case queue:', queueError);
       setError('Case queue unavailable.');
     }
-  }, []);
+  }, [endpoint]);
 
   useEffect(() => {
     void refresh();
@@ -706,6 +901,8 @@ function App() {
           {activeView === 'viewer' ? <ViewerView selectedCase={selectedCase} onSelectCase={setSelectedCaseId} /> : null}
           {activeView === 'directory' ? <DirectoryView selectedCaseId={selectedCaseId} onSelectCase={setSelectedCaseId} /> : null}
           {activeView === 'details' ? <DetailsView selectedCase={selectedCase} onSelectCase={setSelectedCaseId} /> : null}
+          {activeView === 'prompt' ? <PromptQueueView /> : null}
+          {activeView === 'transcripts' ? <TranscriptSearchView /> : null}
           {activeView === 'voting' ? <VotingView selectedCase={selectedCase} /> : null}
           {activeView === 'about' ? <AboutView /> : null}
         </main>
@@ -821,8 +1018,9 @@ function OverlayStandby({ loading, error }: { loading: boolean; error: string | 
 function OverlayView() {
   const now = useNowTick(1000);
   const reducedMotion = usePrefersReducedMotion();
-  const { session, loading, connected, error, lastUpdatedAt } = useLiveOverlaySession();
+  const { session, loading, connected, error, lastUpdatedAt, lastEvent } = useLiveOverlaySession();
   const [activePanel, setActivePanel] = useState(0);
+  const [stinger, setStinger] = useState<OverlayStinger | null>(null);
 
   const sidebarCards = useMemo(() => (session ? buildSidebarCards(session, now) : []), [session, now]);
   const transcriptTurns = useMemo(
@@ -852,6 +1050,20 @@ function OverlayView() {
     return () => window.clearInterval(timer);
   }, [reducedMotion, sidebarCards.length, session]);
 
+  useEffect(() => {
+    if (!session) {
+      setStinger(null);
+      return undefined;
+    }
+
+    const nextStinger = stingerFromEvent(lastEvent);
+    if (!nextStinger) return undefined;
+
+    setStinger(nextStinger);
+    const timer = window.setTimeout(() => setStinger(null), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [lastEvent, session]);
+
   if (!session) {
     return <OverlayStandby loading={loading} error={error} />;
   }
@@ -861,6 +1073,18 @@ function OverlayView() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-[hsl(var(--bg))] text-[hsl(var(--text))]">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,hsl(var(--cyan)/0.16),transparent_28%),radial-gradient(circle_at_82%_14%,hsl(var(--purple)/0.16),transparent_26%),radial-gradient(circle_at_72%_78%,hsl(var(--gold)/0.08),transparent_30%),linear-gradient(180deg,hsl(var(--bg))_0%,hsl(211_41%_5%)_100%)]" />
+      {stinger ? (
+        <div
+          className={cn(
+            'pointer-events-none absolute right-8 top-28 z-20 max-w-md rounded-[2rem] border bg-[hsl(var(--surface)/0.94)] px-6 py-5 backdrop-blur-xl motion-safe:animate-pulse',
+            stingerToneClass(stinger.tone),
+          )}
+        >
+          <p className="font-monoish text-xs uppercase tracking-[0.28em]">Court stinger</p>
+          <h2 className="mt-2 text-2xl font-semibold text-[hsl(var(--text))]">{stinger.title}</h2>
+          <p className="mt-2 text-sm leading-6 text-[hsl(var(--muted))]">{stinger.message}</p>
+        </div>
+      ) : null}
       <div className="relative flex min-h-screen flex-col gap-4 p-6 xl:p-8">
         <header className="flex items-start justify-between gap-4 rounded-[2.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.82)] px-6 py-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)] backdrop-blur-xl">
           <div className="min-w-0 space-y-3">
@@ -1027,6 +1251,339 @@ function DirectoryView({ selectedCaseId, onSelectCase }: { selectedCaseId: strin
           </Surface>
         ))}
       </div>
+    </section>
+  );
+}
+
+function PromptQueueView() {
+  const { snapshot, error: queueError } = useCaseQueue();
+  const [prompt, setPrompt] = useState('');
+  const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
+  const turnstileWidgetIdRef = useRef<string | undefined>(undefined);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submission, setSubmission] = useState<PublicQueueSubmission | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const queuedItems = snapshot?.queue.filter(item => item.status === 'queued').slice(0, 6) ?? [];
+  const streamUrl = queuedItems.find(item => item.streamUrl)?.streamUrl ?? '/app/?view=overlay';
+  const transcriptsUrl = queuedItems.find(item => item.transcriptsUrl)?.transcriptsUrl ?? '/app/?view=transcripts';
+  const usesTurnstile = Boolean(TURNSTILE_SITE_KEY);
+
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY || !turnstileContainerRef.current) return undefined;
+
+    let cancelled = false;
+    const renderWidget = () => {
+      if (cancelled || !window.turnstile || !turnstileContainerRef.current || turnstileWidgetIdRef.current) return;
+      turnstileWidgetIdRef.current = window.turnstile.render(turnstileContainerRef.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        callback: setTurnstileToken,
+        'expired-callback': () => setTurnstileToken(''),
+        'error-callback': () => setTurnstileToken(''),
+      });
+    };
+
+    if (window.turnstile) {
+      renderWidget();
+    } else {
+      const script = document.createElement('script');
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      script.async = true;
+      script.defer = true;
+      script.onload = renderWidget;
+      document.head.append(script);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const submitPrompt = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    setSubmission(null);
+
+    try {
+      let nonce = '';
+      if (!usesTurnstile) {
+        const nonceResponse = await fetch('/api/public/case-queue/nonce');
+        if (!nonceResponse.ok) throw new Error('Public prompt verification is not configured.');
+        const noncePayload = await nonceResponse.json() as { nonce?: unknown };
+        if (typeof noncePayload.nonce !== 'string') throw new Error('Verification nonce unavailable');
+        nonce = noncePayload.nonce;
+      } else if (!turnstileToken) {
+        throw new Error('Complete the verification challenge before submitting.');
+      }
+
+      const response = await fetch('/api/public/case-queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
+          source: 'public_page',
+          nonce,
+          turnstileToken,
+        }),
+      });
+      const payload = await response.json() as ApiRecord;
+      if (!response.ok) {
+        const message = readString(payload.message) ?? readString(payload.error) ?? `Prompt rejected (${response.status})`;
+        throw new Error(message);
+      }
+      const nextSubmission = normalizePublicQueueSubmission(payload);
+      if (!nextSubmission) throw new Error('Queue returned an unexpected response');
+      setSubmission(nextSubmission);
+      setPrompt('');
+      setTurnstileToken('');
+      window.turnstile?.reset(turnstileWidgetIdRef.current);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Prompt submission failed');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <Surface className="p-5">
+        <SectionLabel eyebrow="Public prompt queue" title="Submit the next absurd case" note="Prompts enter the queue only; direct session creation stays admin-only." />
+        <form className="mt-5 space-y-4" onSubmit={submitPrompt}>
+          <label className="block text-sm font-semibold text-[hsl(var(--text))]" htmlFor="public-prompt">Case prompt</label>
+          <textarea
+            id="public-prompt"
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            minLength={10}
+            maxLength={500}
+            rows={7}
+            placeholder="The defendant replaced every courtroom exhibit label with riddles..."
+            className="w-full resize-none rounded-[1.5rem] border border-[hsl(var(--border))] bg-black/20 px-4 py-3 text-sm leading-6 text-[hsl(var(--text))] outline-none transition placeholder:text-[hsl(var(--muted))] focus:border-[hsl(var(--cyan))] focus:ring-2 focus:ring-[hsl(var(--cyan)/0.25)]"
+          />
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs uppercase tracking-[0.2em] text-[hsl(var(--muted))]">
+            <span>{prompt.trim().length}/500 characters</span>
+            <span>{usesTurnstile ? 'Protected by Turnstile + rate limits' : 'Protected by dev nonce + rate limits'}</span>
+          </div>
+          {usesTurnstile ? <div ref={turnstileContainerRef} className="min-h-[65px]" /> : null}
+          <button
+            type="submit"
+            disabled={submitting || prompt.trim().length < 10 || (usesTurnstile && !turnstileToken)}
+            className="w-full rounded-2xl bg-[hsl(var(--cyan))] px-4 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {submitting ? 'Submitting…' : 'Submit to queue'}
+          </button>
+        </form>
+
+        {submission ? (
+          <div className="mt-5 rounded-[1.5rem] border border-[hsl(var(--cyan)/0.45)] bg-[hsl(var(--cyan)/0.08)] p-4">
+            <p className="font-monoish text-xs uppercase tracking-[0.24em] text-[hsl(var(--cyan))]">Queued at position #{submission.position}</p>
+            <p className="mt-2 text-sm leading-6 text-[hsl(var(--text))]">{submission.item.prompt}</p>
+            <p className="mt-2 text-sm leading-6 text-[hsl(var(--muted))]">
+              Approximate start: {submission.estimatedStartMinutes ?? 0} minutes. Timing depends on the current case and operator pauses.
+            </p>
+          </div>
+        ) : null}
+        {error ? <p className="mt-4 rounded-2xl border border-[hsl(var(--gold)/0.5)] bg-[hsl(var(--gold)/0.08)] px-3 py-2 text-sm text-[hsl(var(--gold))]">{error}</p> : null}
+      </Surface>
+
+      <div className="space-y-5">
+        <Surface className="p-5">
+          <SectionLabel eyebrow="Queue status" title={`${snapshot?.queuedCount ?? 0} prompts waiting`} note={queueError ?? 'ETA is approximate.'} />
+          <div className="mt-5 grid gap-3">
+            <a href={streamUrl} className="rounded-2xl border border-[hsl(var(--cyan)/0.45)] bg-[hsl(var(--cyan)/0.08)] px-4 py-3 text-sm font-semibold text-[hsl(var(--cyan))] transition hover:border-[hsl(var(--cyan))]">Watch live stream overlay</a>
+            <a href={transcriptsUrl} className="rounded-2xl border border-[hsl(var(--gold)/0.45)] bg-[hsl(var(--gold)/0.08)] px-4 py-3 text-sm font-semibold text-[hsl(var(--gold))] transition hover:border-[hsl(var(--gold))]">Search public transcripts</a>
+          </div>
+        </Surface>
+        <Surface className="p-5">
+          <SectionLabel eyebrow="Next in line" title="Queue preview" note="Newest public and chat submissions wait behind active court." />
+          <div className="mt-5 space-y-3">
+            {queuedItems.length ? queuedItems.map((item, index) => (
+              <article key={item.id} className="rounded-2xl border border-[hsl(var(--border))] bg-black/10 p-4">
+                <p className="font-monoish text-[10px] uppercase tracking-[0.28em] text-[hsl(var(--cyan))]">#{index + 1} · {item.source.replace('_', ' ')}</p>
+                <p className="mt-2 line-clamp-3 text-sm leading-6 text-[hsl(var(--text))]">{item.prompt}</p>
+                <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[hsl(var(--gold))]">Approx. {item.estimatedStartMinutes ?? index * 12} min</p>
+              </article>
+            )) : (
+              <p className="rounded-2xl border border-[hsl(var(--border))] bg-black/10 px-4 py-3 text-sm leading-6 text-[hsl(var(--muted))]">No public prompts queued right now. Auto-generated cases fill empty slots.</p>
+            )}
+          </div>
+        </Surface>
+      </div>
+    </section>
+  );
+}
+
+function TranscriptSearchView() {
+  const [query, setQuery] = useState('');
+  const [submittedQuery, setSubmittedQuery] = useState('');
+  const [results, setResults] = useState<TranscriptSearchResult[]>([]);
+  const [selectedTranscriptId, setSelectedTranscriptId] = useState(getCaseParam);
+  const [selectedSession, setSelectedSession] = useState<LiveSession | null>(null);
+  const [searchLoading, setSearchLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const search = async () => {
+      setSearchLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(`/api/public/transcripts?q=${encodeURIComponent(submittedQuery)}`, { signal: controller.signal });
+        if (!response.ok) throw new Error(`Transcript search failed (${response.status})`);
+        const payload = normalizeTranscriptSearchResponse(await response.json());
+        if (!payload) throw new Error('Transcript search returned an unexpected response');
+        setResults(payload.results);
+      } catch (err) {
+        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Transcript search failed');
+      } finally {
+        if (!controller.signal.aborted) setSearchLoading(false);
+      }
+    };
+    search();
+    return () => controller.abort();
+  }, [submittedQuery]);
+
+  useEffect(() => {
+    if (!selectedTranscriptId) {
+      setSelectedSession(null);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const loadDetail = async () => {
+      setDetailLoading(true);
+      setSelectedSession(null);
+      setError(null);
+      try {
+        const response = await fetch(`/api/public/transcripts/${encodeURIComponent(selectedTranscriptId)}`, { signal: controller.signal });
+        if (!response.ok) throw new Error(`Transcript detail failed (${response.status})`);
+        const payload = await response.json() as ApiRecord;
+        const session = normalizeSession(payload.session);
+        if (!session) throw new Error('Transcript detail returned an unexpected response');
+        setSelectedSession(session);
+      } catch (err) {
+        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Transcript detail failed');
+      } finally {
+        if (!controller.signal.aborted) setDetailLoading(false);
+      }
+    };
+    loadDetail();
+    return () => controller.abort();
+  }, [selectedTranscriptId]);
+
+  const selectTranscript = (id: string) => {
+    setSelectedTranscriptId(id);
+    const url = new URL(window.location.href);
+    url.searchParams.set(VIEW_PARAM, 'transcripts');
+    url.searchParams.set('case', id);
+    window.history.pushState({}, '', url);
+  };
+
+  const clearTranscript = () => {
+    setSelectedTranscriptId('');
+    const url = new URL(window.location.href);
+    url.searchParams.set(VIEW_PARAM, 'transcripts');
+    url.searchParams.delete('case');
+    window.history.pushState({}, '', url);
+  };
+
+  const detailTurns = selectedSession ? [...selectedSession.turns].reverse() : [];
+
+  return (
+    <section className="grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
+      <Surface className="p-5">
+        <SectionLabel eyebrow="Public records" title="Transcript search" note="Search by case id, name, or prompt text." />
+        <form
+          className="mt-5 space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setSubmittedQuery(query.trim());
+          }}
+        >
+          <label className="block text-sm font-semibold text-[hsl(var(--text))]" htmlFor="transcript-query">Case search</label>
+          <input
+            id="transcript-query"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="case id, title, or prompt"
+            className="w-full rounded-2xl border border-[hsl(var(--border))] bg-black/20 px-4 py-3 text-sm text-[hsl(var(--text))] outline-none transition placeholder:text-[hsl(var(--muted))] focus:border-[hsl(var(--cyan))] focus:ring-2 focus:ring-[hsl(var(--cyan)/0.25)]"
+          />
+          <button type="submit" className="w-full rounded-2xl bg-[hsl(var(--cyan))] px-4 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-black transition hover:brightness-110">
+            Search transcripts
+          </button>
+        </form>
+        {error ? <p className="mt-4 rounded-2xl border border-[hsl(var(--gold)/0.5)] bg-[hsl(var(--gold)/0.08)] px-3 py-2 text-sm text-[hsl(var(--gold))]">{error}</p> : null}
+        <div className="mt-5 space-y-3">
+          <p className="font-monoish text-xs uppercase tracking-[0.24em] text-[hsl(var(--muted))]">
+            {searchLoading ? 'Loading records' : `${results.length} records found`}
+          </p>
+          {results.map((result) => (
+            <button
+              key={result.id}
+              type="button"
+              onClick={() => selectTranscript(result.id)}
+              className={cn(
+                'w-full rounded-2xl border px-4 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cyan))]',
+                selectedTranscriptId === result.id ? 'border-[hsl(var(--cyan)/0.6)] bg-[hsl(var(--surface-2))]' : 'border-[hsl(var(--border))] bg-black/10 hover:border-[hsl(var(--cyan)/0.45)]',
+              )}
+            >
+              <p className="font-monoish text-[10px] uppercase tracking-[0.28em] text-[hsl(var(--cyan))]">{result.status} · {result.phase}</p>
+              <p className="mt-2 text-sm font-semibold text-[hsl(var(--text))]">{result.topic}</p>
+              <p className="mt-2 line-clamp-2 text-xs leading-5 text-[hsl(var(--muted))]">{result.casePrompt ?? result.id}</p>
+              <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[hsl(var(--gold))]">{result.turnCount} turns</p>
+            </button>
+          ))}
+        </div>
+      </Surface>
+
+      <Surface className="p-5">
+        {detailLoading ? (
+          <div className="flex min-h-[460px] items-center justify-center rounded-[2rem] border border-dashed border-[hsl(var(--border))] bg-black/10 p-8 text-center">
+            <div>
+              <LivePill text="LOADING" />
+              <h2 className="mt-4 text-2xl font-semibold text-[hsl(var(--text))]">Loading transcript</h2>
+              <p className="mt-3 max-w-md text-sm leading-6 text-[hsl(var(--muted))]">Fetching the selected public case record.</p>
+            </div>
+          </div>
+        ) : selectedSession ? (
+          <div>
+            <div className="flex flex-col gap-3 border-b border-[hsl(var(--border))] pb-5 lg:flex-row lg:items-start lg:justify-between">
+              <SectionLabel eyebrow="Transcript detail" title={selectedSession.topic} note={`${selectedSession.status} · ${selectedSession.phase} · ${selectedSession.turnCount} turns`} />
+              <button type="button" onClick={clearTranscript} className="rounded-full border border-[hsl(var(--border))] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[hsl(var(--muted))] transition hover:border-[hsl(var(--cyan))] hover:text-[hsl(var(--text))]">
+                Clear case
+              </button>
+            </div>
+            <p className="mt-5 text-sm leading-6 text-[hsl(var(--muted))]">{selectedSession.metadata.casePrompt}</p>
+            <div className="mt-5 max-h-[720px] overflow-y-auto pr-2" role="log" aria-live="polite">
+              <div className="space-y-3">
+                {detailTurns.map((turn) => (
+                  <article key={turn.id} className="rounded-2xl border border-[hsl(var(--border))] bg-black/10 p-4">
+                    <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted))]">
+                      <span className="font-monoish text-[hsl(var(--cyan))]">#{turn.turnNumber}</span>
+                      <span>{prettyLabel(turn.role)}</span>
+                      <span>{turn.phase}</span>
+                      <span>{formatOverlayTimestamp(turn.createdAt)}</span>
+                    </div>
+                    <p className="mt-3 text-sm font-semibold text-[hsl(var(--text))]">{prettyLabel(turn.speaker)}</p>
+                    <p className="mt-2 text-sm leading-6 text-[hsl(var(--muted))]">{turn.dialogue}</p>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex min-h-[460px] items-center justify-center rounded-[2rem] border border-dashed border-[hsl(var(--border))] bg-black/10 p-8 text-center">
+            <div>
+              <LivePill text="SELECT" />
+              <h2 className="mt-4 text-2xl font-semibold text-[hsl(var(--text))]">Choose a transcript</h2>
+              <p className="mt-3 max-w-md text-sm leading-6 text-[hsl(var(--muted))]">Search public case records, then open a case to review the full session transcript.</p>
+            </div>
+          </div>
+        )}
+      </Surface>
     </section>
   );
 }

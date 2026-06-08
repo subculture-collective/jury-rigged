@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
     CaseQueue,
     CaseQueueValidationError,
+    estimateQueueStartMinutes,
     validateCasePrompt,
 } from './case-queue.js';
 
@@ -78,5 +79,36 @@ describe('CaseQueue', () => {
         assert.equal(queue.skip(item.id)?.status, 'skipped');
         assert.equal(queue.skip(item.id), undefined);
         assert.equal(queue.nextQueued(), undefined);
+    });
+
+    it('adds approximate queue ETA fields to snapshots', () => {
+        const queue = new CaseQueue();
+        const first = queue.enqueue({
+            prompt: 'The defendant rewired the jury coffee machine to play jazz.',
+            source: 'public_page',
+        });
+        const second = queue.enqueue({
+            prompt: 'The defendant replaced all courthouse stairs with slides.',
+            source: 'public_page',
+        });
+
+        const snapshot = queue.snapshot(null, {
+            estimatedCaseMinutes: 12,
+            streamUrl: '/app/?view=overlay',
+            transcriptsUrl: '/app/?view=transcripts',
+        });
+
+        const firstSnapshot = snapshot.queue.find(item => item.id === first.id);
+        const secondSnapshot = snapshot.queue.find(item => item.id === second.id);
+
+        assert.equal(firstSnapshot?.estimatedStartMinutes, 0);
+        assert.equal(secondSnapshot?.estimatedStartMinutes, 12);
+        assert.ok(
+            (secondSnapshot?.estimatedStartMinutes ?? 0) >=
+                (firstSnapshot?.estimatedStartMinutes ?? 0),
+        );
+        assert.equal(firstSnapshot?.streamUrl, '/app/?view=overlay');
+        assert.equal(firstSnapshot?.transcriptsUrl, '/app/?view=transcripts');
+        assert.equal(estimateQueueStartMinutes(queue, second.id, 12), 12);
     });
 });

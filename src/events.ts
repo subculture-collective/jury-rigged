@@ -6,6 +6,7 @@
  */
 
 import type {
+    AdminTriggerKind,
     CourtEvent,
     CourtPhase,
     RenderDirective,
@@ -201,6 +202,14 @@ export interface CaseFileGeneratedPayload {
     caseFile: CaseFile;
     sessionId: string;
     generatedAt: string; // ISO 8601
+}
+
+export interface AdminTriggerPayload {
+    sessionId: string;
+    kind: AdminTriggerKind;
+    title: string;
+    message: string;
+    emittedAt: string; // ISO 8601
 }
 
 // ---------------------------------------------------------------------------
@@ -491,6 +500,22 @@ export function assertEventPayload(event: CourtEvent): void {
             ) {
                 throw new TypeError(
                     `case_file_generated payload missing required fields: caseFile (object), sessionId, generatedAt`,
+                );
+            }
+            break;
+
+        case 'admin_trigger':
+            if (
+                !hasStringKeys(payload, [
+                    'sessionId',
+                    'kind',
+                    'title',
+                    'message',
+                    'emittedAt',
+                ])
+            ) {
+                throw new TypeError(
+                    `admin_trigger payload missing required string fields: sessionId, kind, title, message, emittedAt`,
                 );
             }
             break;

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-export type CaseQueueSource = 'twitch' | 'operator' | 'generated';
+export type CaseQueueSource = 'twitch' | 'operator' | 'generated' | 'public_page';
 export type CaseQueueStatus = 'queued' | 'running' | 'completed' | 'skipped';
 
 export interface CaseQueueItem {
@@ -10,6 +10,9 @@ export interface CaseQueueItem {
     submittedBy?: string;
     status: CaseQueueStatus;
     sessionId?: string;
+    estimatedStartMinutes?: number;
+    streamUrl?: string;
+    transcriptsUrl?: string;
     createdAt: string;
     updatedAt: string;
 }
@@ -91,13 +94,43 @@ export class CaseQueue {
         return cloneItem(item);
     }
 
-    snapshot(runningSessionId?: string | null) {
+    snapshot(
+        runningSessionId?: string | null,
+        options: {
+            estimatedCaseMinutes?: number;
+            streamUrl?: string;
+            transcriptsUrl?: string;
+        } = {},
+    ) {
+        const estimatedCaseMinutes = options.estimatedCaseMinutes ?? 12;
+        const queued = this.queued();
         return {
-            queue: this.list(),
-            queuedCount: this.queued().length,
+            queue: this.list().map(item => {
+                const position = queued.findIndex(candidate => candidate.id === item.id);
+                return {
+                    ...item,
+                    estimatedStartMinutes:
+                        item.status === 'queued' && position >= 0 ?
+                            estimateQueueStartMinutes(this, item.id, estimatedCaseMinutes)
+                        :   undefined,
+                    streamUrl: options.streamUrl,
+                    transcriptsUrl: options.transcriptsUrl,
+                };
+            }),
+            queuedCount: queued.length,
             runningSessionId: runningSessionId ?? null,
         };
     }
+}
+
+export function estimateQueueStartMinutes(
+    queue: CaseQueue,
+    itemId: string,
+    estimatedCaseMinutes = 12,
+): number | undefined {
+    const position = queue.queued().findIndex(item => item.id === itemId);
+    if (position < 0) return undefined;
+    return Math.max(0, position * estimatedCaseMinutes);
 }
 
 export function validateCasePrompt(raw: string): string {

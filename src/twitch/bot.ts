@@ -81,6 +81,11 @@ export interface RedemptionEvent {
     timestamp: number;
 }
 
+export function buildTranscriptUrl(publicBaseUrl: string, sessionId: string): string {
+    const base = publicBaseUrl.replace(/\/+$/, '');
+    return `${base}/app/?view=transcripts&case=${encodeURIComponent(sessionId)}`;
+}
+
 /**
  * Main Twitch bot class
  * Handles IRC chat commands and EventSub redemptions
@@ -94,6 +99,7 @@ export class TwitchBot {
     private helpTimer: NodeJS.Timeout | null = null;
     private tokenRefreshTimer: NodeJS.Timeout | null = null;
     private seenChatters: Set<string> = new Set();
+    private announcedTranscriptSessionIds: Set<string> = new Set();
     private followerCache = new Map<string, { follows: boolean; expiresAt: number }>();
     private channelUserId: string | null = null;
     private lastWelcomeAt = 0;
@@ -425,6 +431,14 @@ export class TwitchBot {
 
     private publicUrl(): string {
         return (this.config?.publicBaseUrl ?? 'https://jury-rigged.subcult.tv').replace(/\/$/, '');
+    }
+
+    public async announceTranscriptLink(sessionId: string): Promise<void> {
+        if (!this.config?.publicBaseUrl) return;
+        if (this.announcedTranscriptSessionIds.has(sessionId)) return;
+
+        this.announcedTranscriptSessionIds.add(sessionId);
+        await this.say(`Transcript ready: ${buildTranscriptUrl(this.config.publicBaseUrl, sessionId)}`);
     }
 
     private async canSubmitPrompt(context: TwitchChatterContext): Promise<boolean> {
