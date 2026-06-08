@@ -66,7 +66,7 @@ type LiveSession = {
     };
     currentGenre?: string;
     genreHistory: string[];
-    evidenceCards: Array<{ id: string }>;
+    evidenceCards: Array<{ id: string; text?: string; revealedAt?: string }>;
     objectionCount?: number;
     recapTurnIds: string[];
     finalRuling?: {
@@ -111,6 +111,7 @@ type SidebarCard = {
 const VIEW_PARAM = 'view';
 const OVERLAY_DISCOVERY_MS = 5_000;
 const OVERLAY_ROTATION_MS = 7_000;
+const OVERLAY_TRANSCRIPT_LIMIT = 120;
 
 function isViewKey(value: string | null): value is ViewKey {
   return (
@@ -223,10 +224,12 @@ function normalizeSession(raw: unknown): LiveSession | null {
       currentGenre: readString(metadata.currentGenre),
       genreHistory: toStringList(metadata.genreHistory),
       evidenceCards: Array.isArray(metadata.evidenceCards)
-        ? metadata.evidenceCards.flatMap((entry): Array<{ id: string }> => {
+        ? metadata.evidenceCards.flatMap((entry): Array<{ id: string; text?: string; revealedAt?: string }> => {
             if (!isRecord(entry)) return [];
             const evidenceId = readString(entry.id);
-            return evidenceId ? [{ id: evidenceId }] : [];
+            return evidenceId
+              ? [{ id: evidenceId, text: readString(entry.text), revealedAt: readString(entry.revealedAt) }]
+              : [];
           })
         : [],
       objectionCount: readNumber(metadata.objectionCount),
@@ -289,6 +292,71 @@ function prettyLabel(value?: string) {
   return value
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function hashString(value: string) {
+  let hash = 2166136261;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return hash >>> 0;
+}
+
+function createSeededRandom(seedValue: string) {
+  let seed = hashString(seedValue) || 1;
+
+  return () => {
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    return (seed >>> 0) / 4294967296;
+  };
+}
+
+const JUROR_FIRST_NAMES = ['Avery', 'Mina', 'Cole', 'Daria', 'Rowan', 'Jules', 'Nico', 'Iris', 'Tess', 'Bennett'];
+const JUROR_LAST_NAMES = ['Stone', 'Vale', 'Mercer', 'Quinn', 'Hale', 'Brooks', 'Sloane', 'Parker', 'Reed', 'North'];
+const JUROR_ROLES = ['Foreperson', 'Evidence lead', 'Signal reader', 'Procedure guard', 'Pattern spotter', 'Consensus check'];
+const JUROR_TRAITS = ['calm', 'sharp-eyed', 'pragmatic', 'skeptical', 'methodical', 'empathetic', 'direct', 'patient'];
+
+function buildJurors(sessionId: string) {
+  const random = createSeededRandom(sessionId);
+
+  return Array.from({ length: 6 }, (_, index) => {
+    const first = JUROR_FIRST_NAMES[Math.floor(random() * JUROR_FIRST_NAMES.length)];
+    const last = JUROR_LAST_NAMES[Math.floor(random() * JUROR_LAST_NAMES.length)];
+    const role = JUROR_ROLES[index % JUROR_ROLES.length];
+    const trait = JUROR_TRAITS[Math.floor(random() * JUROR_TRAITS.length)];
+
+    return {
+      id: `${sessionId}-${index}`,
+      label: `Juror ${String(index + 1).padStart(2, '0')}`,
+      name: `${first} ${last}`,
+      role,
+      trait,
+    };
+  });
+}
+
+function formatOverlayTimestamp(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function latestEvidenceLabel(session: LiveSession) {
+  const latest = session.metadata.evidenceCards.at(-1);
+  if (!latest) return 'No evidence revealed yet';
+  return latest.text ?? latest.id;
+}
+
+function latestDirectiveLabel(session: LiveSession) {
+  const directive = session.metadata.lastRenderDirective;
+  if (!directive) return 'No active directive';
+  return readString(directive.effect) ?? readString(directive.camera) ?? 'Directive active';
 }
 
 function formatDuration(startedAt?: string, now = Date.now()) {
@@ -757,8 +825,11 @@ function OverlayView() {
   const [activePanel, setActivePanel] = useState(0);
 
   const sidebarCards = useMemo(() => (session ? buildSidebarCards(session, now) : []), [session, now]);
-  const latestTurn = session?.turns.at(-1) ?? null;
-  const recentTurns = session?.turns.slice(-3).reverse() ?? [];
+  const transcriptTurns = useMemo(
+    () => (session ? session.turns.slice(-OVERLAY_TRANSCRIPT_LIMIT).reverse() : []),
+    [session],
+  );
+  const jurors = useMemo(() => (session ? buildJurors(session.id) : []), [session]);
   const runtime = session ? formatDuration(session.startedAt ?? session.createdAt, now) : '00:00:00';
   const liveStamp = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'syncing';
 
@@ -785,7 +856,6 @@ function OverlayView() {
     return <OverlayStandby loading={loading} error={error} />;
   }
 
-  const phaseVoteCount = sumRecord(session.metadata.verdictVotes) + sumRecord(session.metadata.sentenceVotes);
   const activeCard = sidebarCards[activePanel] ?? sidebarCards[0];
 
   return (
@@ -795,16 +865,16 @@ function OverlayView() {
         <header className="flex items-start justify-between gap-4 rounded-[2.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.82)] px-6 py-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)] backdrop-blur-xl">
           <div className="min-w-0 space-y-3">
             <div className="flex flex-wrap items-center gap-3">
-              <p className="font-monoish text-[10px] uppercase tracking-[0.38em] text-[hsl(var(--cyan))]">JuryRigged · Live overlay</p>
+              <p className="font-monoish text-xs uppercase tracking-[0.32em] text-[hsl(var(--cyan))]">JuryRigged · Live overlay</p>
               <LivePill text={connected ? 'LIVE' : 'SYNCING'} />
-              <span className="rounded-full border border-[hsl(var(--border))] bg-black/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-[hsl(var(--muted))]">{session.phase}</span>
+              <span className="rounded-full border border-[hsl(var(--border))] bg-black/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-[hsl(var(--muted))]">{session.phase}</span>
             </div>
             <h1 className="text-3xl font-semibold tracking-tight text-[hsl(var(--text))] sm:text-4xl">{session.topic}</h1>
             <p className="max-w-4xl text-sm leading-6 text-[hsl(var(--muted))]">{session.metadata.casePrompt}</p>
           </div>
 
           <div className="shrink-0 text-right">
-            <p className="font-monoish text-[10px] uppercase tracking-[0.32em] text-[hsl(var(--muted))]">Runtime</p>
+            <p className="font-monoish text-xs uppercase tracking-[0.26em] text-[hsl(var(--muted))]">Runtime</p>
             <p className="mt-2 text-2xl font-semibold text-[hsl(var(--text))]">{runtime}</p>
             <p className="mt-1 text-xs text-[hsl(var(--muted))]">Synced {liveStamp}{error ? ` · ${error}` : ''}</p>
           </div>
@@ -815,79 +885,58 @@ function OverlayView() {
             <Surface className="min-h-0 flex-1 p-6">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="font-monoish text-[10px] uppercase tracking-[0.32em] text-[hsl(var(--cyan))]">Current beat</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-[hsl(var(--text))]">Latest turn on record</h2>
+                  <p className="font-monoish text-xs uppercase tracking-[0.28em] text-[hsl(var(--cyan))]">Current beat</p>
+                  <h2 className="mt-2 text-2xl font-semibold text-[hsl(var(--text))]">Transcript feed</h2>
                 </div>
-                <div className="rounded-full border border-[hsl(var(--border))] bg-black/10 px-3 py-1 text-[10px] uppercase tracking-[0.28em] text-[hsl(var(--muted))]">{session.turnCount} turns</div>
+                <div className="rounded-full border border-[hsl(var(--border))] bg-black/10 px-3 py-1 text-xs uppercase tracking-[0.22em] text-[hsl(var(--muted))]">{session.turnCount} turns · showing {transcriptTurns.length}</div>
               </div>
 
-              <div className="mt-5 grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-                <article className="rounded-[1.75rem] border border-[hsl(var(--border))] bg-black/15 p-5">
-                  <p className="text-[10px] uppercase tracking-[0.32em] text-[hsl(var(--muted))]">Now speaking</p>
-                  {latestTurn ? (
-                    <>
-                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                        <span className="font-monoish text-[hsl(var(--cyan))]">#{latestTurn.turnNumber}</span>
-                        <span className="rounded-full border border-[hsl(var(--border))] px-2 py-0.5 text-[hsl(var(--muted))]">{prettyLabel(latestTurn.role)}</span>
-                        <span className="font-semibold text-[hsl(var(--text))]">{prettyLabel(latestTurn.speaker)}</span>
-                      </div>
-                      <p className="mt-4 text-2xl leading-[1.25] font-semibold text-[hsl(var(--text))] sm:text-[2rem]">{latestTurn.dialogue}</p>
-                      <p className="mt-4 font-monoish text-[10px] uppercase tracking-[0.3em] text-[hsl(var(--gold))]">{session.phase} · {latestTurn.createdAt}</p>
-                    </>
-                  ) : (
-                    <p className="mt-4 text-sm leading-6 text-[hsl(var(--muted))]">The stream is live, but no spoken turn has arrived yet.</p>
-                  )}
-                </article>
-
-                <aside className="rounded-[1.75rem] border border-[hsl(var(--border))] bg-black/15 p-5">
-                  <p className="text-[10px] uppercase tracking-[0.32em] text-[hsl(var(--muted))]">Session pulse</p>
-                  <div className="mt-4 space-y-3 text-sm text-[hsl(var(--text))]">
-                    <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.7)] p-3">
-                      <p className="text-[10px] uppercase tracking-[0.24em] text-[hsl(var(--muted))]">Case type</p>
-                      <p className="mt-1 font-semibold">{session.metadata.caseType}</p>
-                    </div>
-                    <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.7)] p-3">
-                      <p className="text-[10px] uppercase tracking-[0.24em] text-[hsl(var(--muted))]">Participants</p>
-                      <p className="mt-1 font-semibold">{session.participants.length} connected</p>
-                    </div>
-                    <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.7)] p-3">
-                      <p className="text-[10px] uppercase tracking-[0.24em] text-[hsl(var(--muted))]">Vote actions</p>
-                      <p className="mt-1 font-semibold">{phaseVoteCount} recorded</p>
-                    </div>
+              <div className="mt-5 min-h-0 flex-1 overflow-hidden rounded-[1.75rem] border border-[hsl(var(--border))] bg-black/15">
+                <div className="flex items-center justify-between gap-3 border-b border-[hsl(var(--border))] px-4 py-3">
+                  <p className="font-monoish text-xs uppercase tracking-[0.26em] text-[hsl(var(--muted))]">Newest first</p>
+                  <p className="text-xs uppercase tracking-[0.22em] text-[hsl(var(--muted))]">{session.phase} · live transcript</p>
+                </div>
+                <div className="max-h-[min(58vh,760px)] overflow-y-auto px-4 py-4" role="log" aria-live="polite" aria-relevant="additions text">
+                  <div className="space-y-3">
+                    {transcriptTurns.length > 0 ? transcriptTurns.map((turn) => (
+                      <article key={turn.id} className="rounded-[1.35rem] border border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.7)] px-4 py-3 shadow-[0_10px_24px_rgba(0,0,0,0.16)]">
+                        <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted))]">
+                          <span className="font-monoish text-[hsl(var(--cyan))]">#{turn.turnNumber}</span>
+                          <span className="rounded-full border border-[hsl(var(--border))] px-2 py-0.5">{prettyLabel(turn.role)}</span>
+                          <span className="rounded-full border border-[hsl(var(--border))] px-2 py-0.5">{turn.phase}</span>
+                          <span>{formatOverlayTimestamp(turn.createdAt)}</span>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                          <p className="text-sm font-semibold tracking-tight text-[hsl(var(--text))]">{prettyLabel(turn.speaker)}</p>
+                          <p className="text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted))]">{turn.role}</p>
+                        </div>
+                        <p className="mt-3 text-sm leading-6 font-normal text-[hsl(var(--text)/0.92)]">{turn.dialogue}</p>
+                      </article>
+                    )) : (
+                      <div className="rounded-[1.35rem] border border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.7)] px-4 py-4 text-sm text-[hsl(var(--muted))]">The stream is live, but no spoken turn has arrived yet.</div>
+                    )}
                   </div>
-                </aside>
+                </div>
               </div>
             </Surface>
 
-            <div className="grid gap-4 md:grid-cols-3">
-              <StatChip label="Current phase" value={session.phase} tone="cyan" />
-              <StatChip label="Evidence" value={`${session.metadata.evidenceCards.length} cards`} tone="gold" />
-              <StatChip label="Objections" value={String(session.metadata.objectionCount ?? 0)} tone="purple" />
-            </div>
-
             <Surface className="p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-monoish text-[10px] uppercase tracking-[0.32em] text-[hsl(var(--cyan))]">Recent turns</p>
-                  <h2 className="mt-2 text-lg font-semibold text-[hsl(var(--text))]">Last three entries</h2>
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-[1.5rem] border border-[hsl(var(--border))] bg-black/10 p-4">
+                  <p className="font-monoish text-xs uppercase tracking-[0.24em] text-[hsl(var(--cyan))]">Current phase</p>
+                  <p className="mt-2 text-lg font-semibold text-[hsl(var(--text))]">{session.phase}</p>
+                  <p className="mt-2 text-sm leading-6 text-[hsl(var(--muted))]">Runtime {runtime} · {session.status}</p>
                 </div>
-                <p className="text-xs uppercase tracking-[0.24em] text-[hsl(var(--muted))]">Transcript only, no filler</p>
-              </div>
-              <div className="mt-4 grid gap-3 lg:grid-cols-3">
-                {recentTurns.length > 0 ? (
-                  recentTurns.map((turn) => (
-                    <article key={turn.id} className="rounded-[1.5rem] border border-[hsl(var(--border))] bg-black/10 p-4">
-                      <div className="flex flex-wrap items-center gap-2 text-xs">
-                        <span className="font-monoish text-[hsl(var(--cyan))]">#{turn.turnNumber}</span>
-                        <span className="rounded-full border border-[hsl(var(--border))] px-2 py-0.5 text-[hsl(var(--muted))]">{prettyLabel(turn.role)}</span>
-                      </div>
-                      <p className="mt-3 text-sm font-semibold text-[hsl(var(--text))]">{prettyLabel(turn.speaker)}</p>
-                      <p className="mt-2 text-sm leading-6 text-[hsl(var(--muted))]">{turn.dialogue}</p>
-                    </article>
-                  ))
-                ) : (
-                  <div className="rounded-[1.5rem] border border-[hsl(var(--border))] bg-black/10 p-4 text-sm text-[hsl(var(--muted))]">No turns captured yet.</div>
-                )}
+                <div className="rounded-[1.5rem] border border-[hsl(var(--border))] bg-black/10 p-4">
+                  <p className="font-monoish text-xs uppercase tracking-[0.24em] text-[hsl(var(--gold))]">Evidence</p>
+                  <p className="mt-2 text-lg font-semibold text-[hsl(var(--text))]">{session.metadata.evidenceCards.length} cards</p>
+                  <p className="mt-2 line-clamp-2 text-sm leading-6 text-[hsl(var(--muted))]">{latestEvidenceLabel(session)}</p>
+                </div>
+                <div className="rounded-[1.5rem] border border-[hsl(var(--border))] bg-black/10 p-4">
+                  <p className="font-monoish text-xs uppercase tracking-[0.24em] text-[hsl(var(--purple))]">Objections</p>
+                  <p className="mt-2 text-lg font-semibold text-[hsl(var(--text))]">{String(session.metadata.objectionCount ?? 0)}</p>
+                  <p className="mt-2 text-sm leading-6 text-[hsl(var(--muted))]">{prettyLabel(latestDirectiveLabel(session))}</p>
+                </div>
               </div>
             </Surface>
           </section>
@@ -896,7 +945,7 @@ function OverlayView() {
             <Surface className="flex min-h-[520px] flex-1 flex-col p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="font-monoish text-[10px] uppercase tracking-[0.32em] text-[hsl(var(--gold))]">Sidebar rotation</p>
+                  <p className="font-monoish text-xs uppercase tracking-[0.24em] text-[hsl(var(--gold))]">Sidebar rotation</p>
                   <h2 className="mt-2 text-xl font-semibold text-[hsl(var(--text))]">Live information blocks</h2>
                 </div>
                 <div className="flex gap-1" aria-hidden="true">
@@ -910,7 +959,7 @@ function OverlayView() {
               </div>
 
               <div className="mt-5 min-h-[420px] rounded-[1.75rem] border border-[hsl(var(--border))] bg-black/15 p-5 motion-safe:transition-opacity motion-safe:duration-500 motion-reduce:transition-none">
-                <p className="font-monoish text-[10px] uppercase tracking-[0.3em] text-[hsl(var(--cyan))]">{activeCard?.eyebrow}</p>
+                <p className="font-monoish text-xs uppercase tracking-[0.24em] text-[hsl(var(--cyan))]">{activeCard?.eyebrow}</p>
                 <h3 className="mt-2 text-2xl font-semibold text-[hsl(var(--text))]">{activeCard?.title}</h3>
                 <p className="mt-3 text-sm leading-6 text-[hsl(var(--muted))]">{activeCard?.summary}</p>
                 <div className="mt-5 space-y-2">
@@ -931,9 +980,22 @@ function OverlayView() {
             </Surface>
 
             <Surface className="p-5">
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                <StatChip label="Judge" value={prettyLabel(session.metadata.roleAssignments.judge)} tone="gold" />
-                <StatChip label="Bailiff" value={prettyLabel(session.metadata.roleAssignments.bailiff)} tone="green" />
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-monoish text-xs uppercase tracking-[0.24em] text-[hsl(var(--gold))]">Jury panel</p>
+                  <h2 className="mt-2 text-xl font-semibold text-[hsl(var(--text))]">Six deterministic jurors</h2>
+                </div>
+                <p className="text-xs uppercase tracking-[0.2em] text-[hsl(var(--muted))]">Seeded by session id</p>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {jurors.map((juror) => (
+                  <article key={juror.id} className="rounded-[1.35rem] border border-[hsl(var(--border))] bg-black/10 p-4">
+                    <p className="font-monoish text-xs uppercase tracking-[0.18em] text-[hsl(var(--gold))]">{juror.label}</p>
+                    <p className="mt-2 text-sm font-semibold text-[hsl(var(--text))]">{juror.name}</p>
+                    <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[hsl(var(--gold))]">{juror.role}</p>
+                    <p className="mt-2 text-sm leading-6 text-[hsl(var(--muted))]">{juror.trait}</p>
+                  </article>
+                ))}
               </div>
             </Surface>
           </aside>
