@@ -99,6 +99,8 @@ export interface CourtSessionMetadata {
     mode: 'juryrigged';
     casePrompt: string;
     caseType: CaseType;
+    caseSource?: 'generated' | 'operator' | 'twitch';
+    queueItemId?: string;
     sentenceOptions: string[];
     phaseStartedAt?: string;
     phaseDurationMs?: number;

@@ -6,7 +6,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isValidAgent } from './agents.js';
 import { assignCourtRoles, participantsFromRoleAssignments } from './court/roles.js';
-import { runCourtSession } from './court/orchestrator.js';
+import {
+    FallbackCircuitOpenError,
+    runCourtSession,
+    type RunCourtSessionOptions,
+} from './court/orchestrator.js';
+import {
+    CaseQueue,
+    CaseQueueValidationError,
+    type CaseQueueItem,
+    type CaseQueueSource,
+} from './court/case-queue.js';
 import {
     selectNextSafePrompt,
     DEFAULT_ROTATION_CONFIG,
@@ -381,153 +391,171 @@ interface SessionRouteDeps {
     sentenceWindowMs: number;
     recorder: SessionEventRecorderManager;
     replay?: LoadedReplayRecording;
+    onLlmFallback?: RunCourtSessionOptions['onLlmFallback'];
+    onLlmSuccess?: RunCourtSessionOptions['onLlmSuccess'];
+}
+
+interface CreateCourtSessionInput {
+    topic?: unknown;
+    caseType?: unknown;
+    participants?: unknown;
+    sentenceOptions?: unknown;
+    caseSource?: 'generated' | 'operator' | 'twitch';
+    queueItemId?: string;
+}
+
+interface SimulationControlState {
+    automationPaused: boolean;
+    errorState: boolean;
+    errorReason?: string;
+    pausedAt?: string;
+    resumedAt?: string;
+    fallbackThreshold: number;
+    consecutiveFallbacks: number;
+    lastFallbackAt?: string;
+}
+
+async function createCourtSession(
+    deps: SessionRouteDeps,
+    input: CreateCourtSessionInput = {},
+) {
+    const recentSessions = await deps.store.listSessions();
+    const genreHistory: GenreTag[] = recentSessions
+        .filter(s => s.metadata.currentGenre)
+        .sort(
+            (a, b) =>
+                new Date(a.createdAt).getTime() -
+                new Date(b.createdAt).getTime(),
+        )
+        .slice(-DEFAULT_ROTATION_CONFIG.maxHistorySize)
+        .map(s => s.metadata.currentGenre!)
+        .filter(Boolean);
+
+    let selectedPrompt: PromptBankEntry;
+    try {
+        selectedPrompt = selectNextSafePrompt(genreHistory);
+    } catch (error) {
+        logger.error('[server] selectNextSafePrompt failed:', {
+            error: error instanceof Error ? error.message : error,
+        });
+        throw new CourtValidationError('No safe prompts available');
+    }
+
+    const userTopic = typeof input.topic === 'string' ? input.topic.trim() : '';
+    if (userTopic && userTopic.length < 10) {
+        throw new CourtValidationError('topic must be at least 10 characters');
+    }
+
+    if (userTopic) {
+        const moderation = moderateContent(userTopic);
+        if (moderation.flagged) {
+            throw new CourtValidationError('topic violates safety policy');
+        }
+    }
+
+    const topic = userTopic || selectedPrompt.casePrompt;
+    const caseType: CaseType =
+        input.caseType === 'civil' ? 'civil'
+        : input.caseType === 'criminal' ? 'criminal'
+        : selectedPrompt.caseType;
+
+    const rawOverride = Array.isArray(input.participants)
+        ? (input.participants as string[]).filter((id): id is AgentId =>
+              isValidAgent(id),
+          )
+        : undefined;
+    const roleAssignments = assignCourtRoles(
+        rawOverride && rawOverride.length > 0 ? rawOverride : undefined,
+    );
+    const participants = participantsFromRoleAssignments(roleAssignments);
+
+    const sentenceOptions =
+        Array.isArray(input.sentenceOptions) && input.sentenceOptions.length > 0
+            ? input.sentenceOptions
+                  .map((option: unknown) => String(option).trim())
+                  .filter(Boolean)
+            : [
+                  'Community service in the meme archives',
+                  'Banished to the shadow realm',
+                  'Mandatory apology haikus',
+                  'Ethics training hosted by a raccoon',
+                  'Ukulele ankle-monitor probation',
+              ];
+
+    const updatedGenreHistory = [...genreHistory, selectedPrompt.genre].slice(
+        -DEFAULT_ROTATION_CONFIG.maxHistorySize,
+    );
+
+    const session = await deps.store.createSession({
+        topic,
+        participants,
+        metadata: {
+            mode: 'juryrigged',
+            casePrompt: topic,
+            caseType,
+            caseSource: input.caseSource ?? (userTopic ? 'operator' : 'generated'),
+            queueItemId: input.queueItemId,
+            sentenceOptions,
+            verdictVoteWindowMs: deps.verdictWindowMs,
+            sentenceVoteWindowMs: deps.sentenceWindowMs,
+            verdictVotes: {},
+            sentenceVotes: {},
+            pressVotes: {},
+            presentVotes: {},
+            roleAssignments,
+            currentGenre: selectedPrompt.genre,
+            genreHistory: updatedGenreHistory,
+            evidenceCards: [],
+            objectionCount: 0,
+        },
+    });
+
+    if (deps.autoRunCourtSession && !deps.replay) {
+        try {
+            await deps.recorder.start({
+                sessionId: session.id,
+                initialEvents: [
+                    createSyntheticEvent({
+                        sessionId: session.id,
+                        type: 'session_created',
+                        payload: { sessionId: session.id },
+                    }),
+                ],
+            });
+        } catch (error) {
+            logger.warn(
+                `[replay] failed to start recorder for session=${session.id}: ${error instanceof Error ? error.message : String(error)}`,
+            );
+        }
+    }
+
+    if (deps.autoRunCourtSession) {
+        void runCourtSession(session.id, deps.store, {
+            auditLogStore: deps.auditLogStore,
+            onLlmFallback: deps.onLlmFallback,
+            onLlmSuccess: deps.onLlmSuccess,
+        });
+    }
+
+    return session;
 }
 
 function createSessionHandler(deps: SessionRouteDeps) {
     return async (req: Request, res: Response): Promise<Response> => {
         try {
-            // Phase 3: Build genre history from recent sessions
-            const recentSessions = await deps.store.listSessions();
-            const genreHistory: GenreTag[] = recentSessions
-                .filter(s => s.metadata.currentGenre)
-                .sort(
-                    (a, b) =>
-                        new Date(a.createdAt).getTime() -
-                        new Date(b.createdAt).getTime(),
-                )
-                .slice(-DEFAULT_ROTATION_CONFIG.maxHistorySize)
-                .map(s => s.metadata.currentGenre!)
-                .filter(Boolean);
-
-            // Phase 3: Select next prompt from bank using genre rotation
-            let selectedPrompt: PromptBankEntry;
-            try {
-                selectedPrompt = selectNextSafePrompt(genreHistory);
-            } catch (error) {
-                logger.error('[server] selectNextSafePrompt failed:', {
-                    error: error instanceof Error ? error.message : error,
-                });
-                return sendError(
-                    res,
-                    503,
-                    'SAFE_PROMPT_UNAVAILABLE',
-                    'No safe prompts available',
-                );
-            }
-
-            const userTopic =
-                typeof req.body?.topic === 'string' ?
-                    req.body.topic.trim()
-                :   '';
-
-            if (userTopic && userTopic.length < 10) {
-                return sendError(
-                    res,
-                    400,
-                    'INVALID_TOPIC',
-                    'topic must be at least 10 characters',
-                );
-            }
-
-            if (userTopic) {
-                const moderation = moderateContent(userTopic);
-                if (moderation.flagged) {
-                    return sendError(
-                        res,
-                        400,
-                        'TOPIC_REJECTED',
-                        'topic violates safety policy',
-                        { reasons: moderation.reasons },
-                    );
-                }
-            }
-
-            const topic = userTopic || selectedPrompt.casePrompt;
-
-            const caseType: CaseType =
-                req.body?.caseType === 'civil' ? 'civil'
-                : req.body?.caseType === 'criminal' ? 'criminal'
-                : selectedPrompt.caseType; // Use selected prompt's case type if not specified
-
-            const rawOverride = Array.isArray(req.body?.participants)
-                ? (req.body.participants as string[]).filter((id): id is AgentId => isValidAgent(id))
-                : undefined;
-
-            const roleAssignments = assignCourtRoles(rawOverride && rawOverride.length > 0 ? rawOverride : undefined);
-            const participants = participantsFromRoleAssignments(roleAssignments);
-
-            const sentenceOptions =
-                (
-                    Array.isArray(req.body?.sentenceOptions) &&
-                    req.body.sentenceOptions.length > 0
-                ) ?
-                    req.body.sentenceOptions
-                        .map((option: unknown) => String(option).trim())
-                        .filter(Boolean)
-                :   [
-                        'Community service in the meme archives',
-                        'Banished to the shadow realm',
-                        'Mandatory apology haikus',
-                        'Ethics training hosted by a raccoon',
-                        'Ukulele ankle-monitor probation',
-                    ];
-
-            // Phase 3: Update genre history
-            const updatedGenreHistory = [
-                ...genreHistory,
-                selectedPrompt.genre,
-            ].slice(-DEFAULT_ROTATION_CONFIG.maxHistorySize);
-
-            const session = await deps.store.createSession({
-                topic,
-                participants,
-                metadata: {
-                    mode: 'juryrigged',
-                    casePrompt: topic,
-                    caseType,
-                    sentenceOptions,
-                    verdictVoteWindowMs: deps.verdictWindowMs,
-                    sentenceVoteWindowMs: deps.sentenceWindowMs,
-                    verdictVotes: {},
-                    sentenceVotes: {},
-                    pressVotes: {},
-                    presentVotes: {},
-                    roleAssignments,
-                    // Phase 3: Add genre tracking
-                    currentGenre: selectedPrompt.genre,
-                    genreHistory: updatedGenreHistory,
-                    evidenceCards: [],
-                    objectionCount: 0,
-                },
+            const session = await createCourtSession(deps, {
+                topic: req.body?.topic,
+                caseType: req.body?.caseType,
+                participants: req.body?.participants,
+                sentenceOptions: req.body?.sentenceOptions,
+                caseSource: req.body?.topic ? 'operator' : 'generated',
             });
-
-            if (deps.autoRunCourtSession && !deps.replay) {
-                try {
-                    await deps.recorder.start({
-                        sessionId: session.id,
-                        initialEvents: [
-                            createSyntheticEvent({
-                                sessionId: session.id,
-                                type: 'session_created',
-                                payload: { sessionId: session.id },
-                            }),
-                        ],
-                    });
-                } catch (error) {
-                    logger.warn(
-                        `[replay] failed to start recorder for session=${session.id}: ${error instanceof Error ? error.message : String(error)}`,
-                    );
-                }
-            }
-
-            if (deps.autoRunCourtSession) {
-                void runCourtSession(session.id, deps.store, {
-                    auditLogStore: deps.auditLogStore,
-                });
-            }
 
             return res.status(201).json({ session });
         } catch (error) {
+            if (error instanceof CourtValidationError) {
+                return sendError(res, 400, 'INVALID_SESSION_INPUT', error.message);
+            }
             const message =
                 error instanceof Error ?
                     error.message
@@ -851,6 +879,12 @@ function registerApiRoutes(
         replay?: LoadedReplayRecording;
         adminAuth: AdminAuthConfig;
         auditLogStore: LLMAuditLogStore;
+        caseQueue: CaseQueue;
+        autoGenerateCases: boolean;
+        autoCaseIdleDelayMs: number;
+        simulationControl: SimulationControlState;
+        onLlmFallback?: RunCourtSessionOptions['onLlmFallback'];
+        onLlmSuccess?: RunCourtSessionOptions['onLlmSuccess'];
     },
 ): void {
     const adminGet = requireAdmin(deps.adminAuth);
@@ -1038,6 +1072,178 @@ function registerApiRoutes(
         res.json({ sessions });
     });
 
+    const getRunningOrPendingSession = async () => {
+        const sessions = await deps.store.listSessions();
+        return sessions.find(
+            session =>
+                session.status === 'running' || session.status === 'pending',
+        );
+    };
+
+    const queueSnapshot = async () => {
+        const active = await getRunningOrPendingSession();
+        return {
+            ...deps.caseQueue.snapshot(active?.id ?? null),
+            automationEnabled: deps.autoGenerateCases,
+            automationPaused: deps.simulationControl.automationPaused,
+            errorState: deps.simulationControl.errorState,
+            errorReason: deps.simulationControl.errorReason,
+            consecutiveFallbacks: deps.simulationControl.consecutiveFallbacks,
+            fallbackThreshold: deps.simulationControl.fallbackThreshold,
+            generatedFallback: deps.autoGenerateCases && deps.caseQueue.queued().length === 0,
+        };
+    };
+
+    const enqueueCase = (input: {
+        prompt: unknown;
+        source: CaseQueueSource;
+        submittedBy?: unknown;
+    }) => {
+        const prompt = typeof input.prompt === 'string' ? input.prompt : '';
+        const moderation = moderateContent(prompt);
+        if (moderation.flagged) {
+            throw new CaseQueueValidationError('prompt violates safety policy');
+        }
+        return deps.caseQueue.enqueue({
+            prompt,
+            source: input.source,
+            submittedBy:
+                typeof input.submittedBy === 'string' ? input.submittedBy : undefined,
+        });
+    };
+
+    const startQueuedCase = async (item: CaseQueueItem) => {
+        const active = await getRunningOrPendingSession();
+        if (active) return { started: false, active };
+        const session = await createCourtSession(
+            {
+                store: deps.store,
+                auditLogStore: deps.auditLogStore,
+                autoRunCourtSession: deps.autoRunCourtSession,
+                verdictWindowMs: deps.verdictWindowMs,
+                sentenceWindowMs: deps.sentenceWindowMs,
+                recorder: deps.recorder,
+                replay: deps.replay,
+                onLlmFallback: deps.onLlmFallback,
+                onLlmSuccess: deps.onLlmSuccess,
+            },
+            {
+                topic: item.prompt,
+                caseSource: item.source,
+                queueItemId: item.id,
+            },
+        );
+        deps.caseQueue.markRunning(item.id, session.id);
+        return { started: true, session };
+    };
+
+    app.get('/api/court/case-queue', async (_req, res) => {
+        res.json(await queueSnapshot());
+    });
+
+    app.get('/api/admin/simulation-control', adminGet, async (_req, res) => {
+        res.json({ control: deps.simulationControl, queue: await queueSnapshot() });
+    });
+
+    app.post('/api/admin/simulation-control/pause', adminPost, async (req, res) => {
+        deps.simulationControl.automationPaused = true;
+        deps.simulationControl.pausedAt = new Date().toISOString();
+        if (typeof req.body?.reason === 'string' && req.body.reason.trim()) {
+            deps.simulationControl.errorReason = req.body.reason.trim();
+        }
+        return res.json({ control: deps.simulationControl, queue: await queueSnapshot() });
+    });
+
+    app.post('/api/admin/simulation-control/resume', adminPost, async (_req, res) => {
+        deps.simulationControl.automationPaused = false;
+        deps.simulationControl.errorState = false;
+        deps.simulationControl.errorReason = undefined;
+        deps.simulationControl.consecutiveFallbacks = 0;
+        deps.simulationControl.resumedAt = new Date().toISOString();
+        return res.json({ control: deps.simulationControl, queue: await queueSnapshot() });
+    });
+
+    const requireCaseQueueSubmitToken = (req: Request, res: Response, next: NextFunction) => {
+        const configuredToken = process.env.CASE_QUEUE_SUBMIT_TOKEN;
+        if (!configuredToken) {
+            return sendError(
+                res,
+                503,
+                'CASE_QUEUE_SUBMISSIONS_DISABLED',
+                'Public case queue submissions are disabled until CASE_QUEUE_SUBMIT_TOKEN is configured',
+            );
+        }
+        const providedToken = req.header('X-Case-Queue-Token') ?? '';
+        const configured = Buffer.from(configuredToken);
+        const provided = Buffer.from(providedToken);
+        const matches =
+            configured.length === provided.length &&
+            crypto.timingSafeEqual(configured, provided);
+        if (!matches) {
+            return sendError(res, 401, 'CASE_QUEUE_UNAUTHORIZED', 'Not authorized to submit cases');
+        }
+        next();
+    };
+
+    app.post(
+        '/api/court/case-queue',
+        audienceInteractionLimiter,
+        requireCaseQueueSubmitToken,
+        async (req, res) => {
+            try {
+                const item = enqueueCase({
+                    prompt: req.body?.prompt,
+                    source: 'twitch',
+                    submittedBy: req.body?.submittedBy,
+                });
+                return res.status(201).json({ item, snapshot: await queueSnapshot() });
+            } catch (error) {
+                if (error instanceof CaseQueueValidationError) {
+                    return sendError(res, 400, 'CASE_PROMPT_REJECTED', error.message);
+                }
+                throw error;
+            }
+        },
+    );
+
+    app.post('/api/admin/case-queue', adminPost, async (req, res) => {
+        try {
+            const item = enqueueCase({
+                prompt: req.body?.prompt,
+                source: 'operator',
+                submittedBy: req.body?.submittedBy ?? 'operator',
+            });
+            return res.status(201).json({ item, snapshot: await queueSnapshot() });
+        } catch (error) {
+            if (error instanceof CaseQueueValidationError) {
+                return sendError(res, 400, 'CASE_PROMPT_REJECTED', error.message);
+            }
+            throw error;
+        }
+    });
+
+    app.post('/api/admin/case-queue/:id/start', adminPost, async (req, res) => {
+        const item = deps.caseQueue
+            .queued()
+            .find(candidate => candidate.id === req.params.id);
+        if (!item) {
+            return sendError(res, 404, 'CASE_QUEUE_ITEM_NOT_FOUND', 'Queued case not found');
+        }
+        const result = await startQueuedCase(item);
+        if (!result.started) {
+            return sendError(res, 409, 'CASE_ALREADY_RUNNING', 'A case is already running');
+        }
+        return res.json({ ...result, snapshot: await queueSnapshot() });
+    });
+
+    app.post('/api/admin/case-queue/:id/skip', adminPost, async (req, res) => {
+        const item = deps.caseQueue.skip(req.params.id);
+        if (!item) {
+            return sendError(res, 404, 'CASE_QUEUE_ITEM_NOT_FOUND', 'Queued case not found');
+        }
+        return res.json({ item, snapshot: await queueSnapshot() });
+    });
+
     app.get('/api/court/sessions/:id', async (req, res) => {
         const session = await deps.store.getSession(req.params.id);
         if (!session) {
@@ -1062,6 +1268,8 @@ function registerApiRoutes(
             sentenceWindowMs: deps.sentenceWindowMs,
             recorder: deps.recorder,
             replay: deps.replay,
+            onLlmFallback: deps.onLlmFallback,
+            onLlmSuccess: deps.onLlmSuccess,
         }),
     );
 
@@ -1297,6 +1505,7 @@ function registerApiRoutes(
 
 export interface CreateServerAppOptions {
     autoRunCourtSession?: boolean;
+    autoGenerateCases?: boolean;
     store?: CourtSessionStore;
     replay?: ReplayRuntimeOptions;
 }
@@ -1328,6 +1537,52 @@ export async function createServerApp(
         :   undefined;
 
     const autoRunCourtSession = options.autoRunCourtSession ?? !replay;
+    const autoGenerateCases =
+        options.autoGenerateCases ?? process.env.AUTO_GENERATE_CASES !== 'false';
+    const autoCaseIdleDelayMs = parsePositiveInt(
+        process.env.AUTO_CASE_IDLE_DELAY_MS,
+        10_000,
+    );
+    const caseQueuePollMs = parsePositiveInt(
+        process.env.CASE_QUEUE_POLL_MS,
+        5_000,
+    );
+    const caseQueue = new CaseQueue();
+    const simulationControl: SimulationControlState = {
+        automationPaused: process.env.SIMULATION_AUTOSTART === 'false',
+        errorState: false,
+        fallbackThreshold: parsePositiveInt(
+            process.env.LLM_FALLBACK_STOP_THRESHOLD,
+            5,
+        ),
+        consecutiveFallbacks: 0,
+    };
+    const onLlmSuccess: RunCourtSessionOptions['onLlmSuccess'] = () => {
+        simulationControl.consecutiveFallbacks = 0;
+    };
+    const onLlmFallback: RunCourtSessionOptions['onLlmFallback'] = async event => {
+        simulationControl.consecutiveFallbacks += 1;
+        simulationControl.lastFallbackAt = new Date().toISOString();
+        if (
+            simulationControl.consecutiveFallbacks <
+            simulationControl.fallbackThreshold
+        ) {
+            return;
+        }
+
+        simulationControl.automationPaused = true;
+        simulationControl.errorState = true;
+        simulationControl.pausedAt = new Date().toISOString();
+        simulationControl.errorReason = `LLM fallback circuit opened after ${simulationControl.consecutiveFallbacks} consecutive fallback/mock responses (${event.provider}/${event.model}).`;
+        logger.error('[simulation] fallback circuit opened', {
+            sessionId: event.sessionId,
+            status: event.status,
+            provider: event.provider,
+            model: event.model,
+            threshold: simulationControl.fallbackThreshold,
+        });
+        throw new FallbackCircuitOpenError(simulationControl.errorReason);
+    };
     const recorder = new SessionEventRecorderManager(
         store,
         resolveRecordingsDir(),
@@ -1380,7 +1635,86 @@ export async function createServerApp(
         recorder,
         replay,
         adminAuth,
+        caseQueue,
+        autoGenerateCases,
+        autoCaseIdleDelayMs,
+        simulationControl,
+        onLlmFallback,
+        onLlmSuccess,
     });
+
+    let caseSchedulerInFlight = false;
+    let lastCaseStartAt = 0;
+    const runCaseScheduler = async () => {
+        if (
+            !autoRunCourtSession ||
+            replay ||
+            caseSchedulerInFlight ||
+            simulationControl.automationPaused ||
+            simulationControl.errorState
+        ) return;
+        caseSchedulerInFlight = true;
+        try {
+            const sessions = await store.listSessions();
+            for (const session of sessions) {
+                if (session.status === 'completed' || session.status === 'failed') {
+                    caseQueue.markCompletedForSession(session.id);
+                }
+            }
+
+            const active = sessions.find(
+                session =>
+                    session.status === 'running' || session.status === 'pending',
+            );
+            if (active) return;
+
+            const queued = caseQueue.nextQueued();
+            const now = Date.now();
+            if (
+                !queued &&
+                (!autoGenerateCases || now - lastCaseStartAt < autoCaseIdleDelayMs)
+            ) {
+                return;
+            }
+
+            const session = await createCourtSession(
+                {
+                    store,
+                    auditLogStore,
+                    autoRunCourtSession,
+                    verdictWindowMs,
+                    sentenceWindowMs,
+                    recorder,
+                    replay,
+                    onLlmFallback,
+                    onLlmSuccess,
+                },
+                queued ?
+                    {
+                        topic: queued.prompt,
+                        caseSource: queued.source,
+                        queueItemId: queued.id,
+                    }
+                :   { caseSource: 'generated' },
+            );
+            if (queued) {
+                caseQueue.markRunning(queued.id, session.id);
+            }
+            lastCaseStartAt = now;
+        } catch (error) {
+            logger.warn(
+                `[case-queue] scheduler failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+        } finally {
+            caseSchedulerInFlight = false;
+        }
+    };
+    const caseSchedulerTimer = setInterval(
+        () => void runCaseScheduler(),
+        caseQueuePollMs,
+    );
+    caseSchedulerTimer.unref();
+    void runCaseScheduler();
 
     // Start Twitch bot (noop if credentials absent)
     const twitchBot = initTwitchBot({
@@ -1389,7 +1723,26 @@ export async function createServerApp(
         botToken: process.env.TWITCH_BOT_TOKEN ?? '',
         clientId: process.env.TWITCH_CLIENT_ID ?? '',
         clientSecret: process.env.TWITCH_CLIENT_SECRET || undefined,
+        refreshToken: process.env.TWITCH_REFRESH_TOKEN || undefined,
+        tokenRuntimePath:
+            process.env.TWITCH_TOKEN_RUNTIME_PATH || '/app/.runtime/twitch-token.json',
+        tokenRefreshSkewMs: Number(
+            process.env.TWITCH_TOKEN_REFRESH_SKEW_MS ?? 600000,
+        ),
         apiBaseUrl: `http://localhost:${process.env.PORT ?? 3000}`,
+        publicBaseUrl:
+            process.env.PUBLIC_BASE_URL || 'https://jury-rigged.subcult.tv',
+        helpIntervalMs: Number(process.env.TWITCH_HELP_INTERVAL_MS ?? 900000),
+        welcomeFirstChatters:
+            process.env.TWITCH_WELCOME_FIRST_CHATTERS !== 'false',
+        caseQueueSubmitToken: process.env.CASE_QUEUE_SUBMIT_TOKEN || undefined,
+        promptMinRole:
+            process.env.TWITCH_PROMPT_MIN_ROLE === 'follower' ? 'follower'
+            : process.env.TWITCH_PROMPT_MIN_ROLE === 'subscriber' ? 'subscriber'
+            : process.env.TWITCH_PROMPT_MIN_ROLE === 'vip' ? 'vip'
+            : process.env.TWITCH_PROMPT_MIN_ROLE === 'moderator' ? 'moderator'
+            : process.env.TWITCH_PROMPT_MIN_ROLE === 'broadcaster' ? 'broadcaster'
+            : 'everyone',
         getActiveSessionId: (() => {
             let cachedId: string | null = null;
             let cacheExpiresAt = 0;
@@ -1426,7 +1779,11 @@ export async function createServerApp(
                     `[replay] failed to start recorder for recovered session=${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
                 );
             }
-            void runCourtSession(sessionId, store, { auditLogStore });
+            void runCourtSession(sessionId, store, {
+                auditLogStore,
+                onLlmFallback,
+                onLlmSuccess,
+            });
         }
     }
 
@@ -1435,6 +1792,7 @@ export async function createServerApp(
         store,
         dispose: () => {
             clearInterval(pruneTimer);
+            clearInterval(caseSchedulerTimer);
             void recorder.dispose();
             void auditLogStore.dispose();
         },

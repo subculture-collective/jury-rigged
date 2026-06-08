@@ -51,6 +51,8 @@ type LiveSession = {
   metadata: {
     casePrompt: string;
     caseType: string;
+    caseSource?: string;
+    queueItemId?: string;
     verdictVotes: Record<string, number>;
     sentenceVotes: Record<string, number>;
     pressVotes: Record<string, number>;
@@ -77,6 +79,24 @@ type LiveSession = {
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
+};
+
+type CaseQueueItem = {
+  id: string;
+  prompt: string;
+  source: 'twitch' | 'operator' | 'generated';
+  submittedBy?: string;
+  status: 'queued' | 'running' | 'completed' | 'skipped';
+  sessionId?: string;
+  createdAt: string;
+};
+
+type CaseQueueSnapshot = {
+  queue: CaseQueueItem[];
+  queuedCount: number;
+  runningSessionId: string | null;
+  automationEnabled: boolean;
+  generatedFallback: boolean;
 };
 
 type SidebarCard = {
@@ -187,6 +207,8 @@ function normalizeSession(raw: unknown): LiveSession | null {
     metadata: {
       casePrompt: readString(metadata.casePrompt) ?? topic,
       caseType: readString(metadata.caseType) ?? 'unknown',
+      caseSource: readString(metadata.caseSource),
+      queueItemId: readString(metadata.queueItemId),
       verdictVotes: toNumericRecord(metadata.verdictVotes),
       sentenceVotes: toNumericRecord(metadata.sentenceVotes),
       pressVotes: toNumericRecord(metadata.pressVotes),
@@ -221,6 +243,40 @@ function normalizeSession(raw: unknown): LiveSession | null {
     createdAt,
     startedAt: readString(raw.startedAt),
     completedAt: readString(raw.completedAt),
+  };
+}
+
+function normalizeCaseQueueSnapshot(raw: unknown): CaseQueueSnapshot | null {
+  if (!isRecord(raw)) return null;
+  const queue = Array.isArray(raw.queue)
+    ? raw.queue.flatMap((item): CaseQueueItem[] => {
+        if (!isRecord(item)) return [];
+        const id = readString(item.id);
+        const prompt = readString(item.prompt);
+        const source = readString(item.source);
+        const status = readString(item.status);
+        const createdAt = readString(item.createdAt);
+        if (!id || !prompt || !createdAt) return [];
+        if (source !== 'twitch' && source !== 'operator' && source !== 'generated') return [];
+        if (status !== 'queued' && status !== 'running' && status !== 'completed' && status !== 'skipped') return [];
+        return [{
+          id,
+          prompt,
+          source,
+          status,
+          createdAt,
+          submittedBy: readString(item.submittedBy),
+          sessionId: readString(item.sessionId),
+        }];
+      })
+    : [];
+
+  return {
+    queue,
+    queuedCount: readNumber(raw.queuedCount) ?? queue.filter(item => item.status === 'queued').length,
+    runningSessionId: readString(raw.runningSessionId) ?? null,
+    automationEnabled: raw.automationEnabled !== false,
+    generatedFallback: raw.generatedFallback === true,
   };
 }
 
@@ -405,6 +461,32 @@ function useLiveOverlaySession() {
   return { session, loading, connected, error, lastUpdatedAt };
 }
 
+function useCaseQueue() {
+  const [snapshot, setSnapshot] = useState<CaseQueueSnapshot | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const response = await fetch('/api/court/case-queue');
+      if (!response.ok) throw new Error(`Unexpected status ${response.status}`);
+      const next = normalizeCaseQueueSnapshot(await response.json());
+      setSnapshot(next);
+      setError(null);
+    } catch (queueError) {
+      console.error('Failed to load case queue:', queueError);
+      setError('Case queue unavailable.');
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 10_000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+
+  return { snapshot, error };
+}
+
 function buildSidebarCards(session: LiveSession, now: number): SidebarCard[] {
   const verdictVotes = sumRecord(session.metadata.verdictVotes);
   const sentenceVotes = sumRecord(session.metadata.sentenceVotes);
@@ -565,9 +647,12 @@ function App() {
 }
 
 function ViewerView({ selectedCase, onSelectCase }: { selectedCase: (typeof cases)[number]; onSelectCase: (id: string) => void }) {
+  const { snapshot: caseQueue, error: caseQueueError } = useCaseQueue();
+
   return (
     <section className="grid gap-5 xl:grid-cols-[280px_minmax(0,1.5fr)_380px]">
       <div className="space-y-5">
+        <CaseAutomationCard snapshot={caseQueue} error={caseQueueError} />
         <PhaseRail phases={timeline} />
         <Surface className="p-5">
           <SectionLabel eyebrow="Selected case" title={selectedCase.title} note={selectedCase.phase} />
@@ -600,6 +685,46 @@ function ViewerView({ selectedCase, onSelectCase }: { selectedCase: (typeof case
         <EvidenceList items={evidence} compact />
       </div>
     </section>
+  );
+}
+
+function CaseAutomationCard({ snapshot, error }: { snapshot: CaseQueueSnapshot | null; error: string | null }) {
+  const queuedItems = snapshot?.queue.filter(item => item.status === 'queued').slice(0, 5) ?? [];
+  const running = snapshot?.queue.find(item => item.status === 'running');
+
+  return (
+    <Surface className="p-5">
+      <SectionLabel
+        eyebrow="Case automation"
+        title="How cases start"
+        note={snapshot?.automationEnabled === false ? 'manual mode' : 'auto queue'}
+      />
+      <p className="mt-4 text-sm leading-6 text-[hsl(var(--muted))]">
+        JuryRigged keeps court running with generated cases. Chat can submit a case with{' '}
+        <span className="font-monoish text-[hsl(var(--cyan))]">!prompt &lt;case idea&gt;</span>. Submitted cases enter this queue and run before the next generated case.
+      </p>
+      <div className="mt-4 grid gap-2 text-xs uppercase tracking-[0.22em] text-[hsl(var(--muted))]">
+        <span className="rounded-2xl border border-[hsl(var(--border))] bg-black/10 px-3 py-2">
+          Running · {running ? running.prompt : snapshot?.runningSessionId ? 'live court session' : 'generated fallback ready'}
+        </span>
+        <span className="rounded-2xl border border-[hsl(var(--border))] bg-black/10 px-3 py-2">
+          Queued submissions · {snapshot?.queuedCount ?? 0}
+        </span>
+      </div>
+      <div className="mt-4 space-y-2">
+        {queuedItems.length > 0 ? queuedItems.map((item, index) => (
+          <div key={item.id} className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-2)/0.75)] px-3 py-3">
+            <p className="font-monoish text-[10px] uppercase tracking-[0.28em] text-[hsl(var(--gold))]">#{index + 1} · {item.source}{item.submittedBy ? ` · ${item.submittedBy}` : ''}</p>
+            <p className="mt-1 line-clamp-3 text-sm leading-5 text-[hsl(var(--text))]">{item.prompt}</p>
+          </div>
+        )) : (
+          <p className="rounded-2xl border border-[hsl(var(--border))] bg-black/10 px-3 py-3 text-sm leading-5 text-[hsl(var(--muted))]">
+            No submitted cases queued. The next empty slot defaults to an auto-generated case.
+          </p>
+        )}
+      </div>
+      {error ? <p className="mt-3 text-xs uppercase tracking-[0.22em] text-[hsl(var(--gold))]">{error}</p> : null}
+    </Surface>
   );
 }
 

@@ -21,6 +21,19 @@ describe('TwitchBot.parseCommand', () => {
         assert.equal(result.params.evidenceId, 'banana');
     });
 
+    it('parses !prompt command', () => {
+        const result = bot.parseCommand(
+            '!prompt The defendant stole the moon with office glitter',
+            'viewer2',
+        );
+        assert.ok(result, 'should return a command');
+        assert.equal(result.action, 'prompt');
+        assert.equal(
+            result.params.prompt,
+            'The defendant stole the moon with office glitter',
+        );
+    });
+
     it('returns null for unknown command', () => {
         const result = bot.parseCommand('!unknown', 'viewer3');
         assert.equal(result, null);
@@ -97,6 +110,7 @@ describe('TwitchBot.forwardCommand routing', () => {
             botToken: 'oauth:test',
             clientId: 'cid',
             apiBaseUrl: 'http://localhost:3000',
+            caseQueueSubmitToken: 'queue-secret',
             getActiveSessionId: async () => 'session-abc',
         });
     }
@@ -145,6 +159,105 @@ describe('TwitchBot.forwardCommand routing', () => {
         assert.ok(requests[0].url.includes('/api/court/sessions/session-abc/vote'));
         assert.equal((requests[0].body as any).voteType, 'sentence');
         assert.equal((requests[0].body as any).choice, 'probation');
+    });
+
+    it('!prompt routes to the case queue without an active session', async () => {
+        requests.length = 0;
+        const bot = new TwitchBot({
+            channel: 'test',
+            botToken: 'oauth:test',
+            clientId: 'cid',
+            apiBaseUrl: 'http://localhost:3000',
+            caseQueueSubmitToken: 'queue-secret',
+            getActiveSessionId: async () => null,
+        });
+        await bot.handleChatMessage(
+            '!prompt The bailiff arrested a sandwich for contempt',
+            'viewer5',
+        );
+        assert.equal(requests.length, 1);
+        assert.ok(requests[0].url.includes('/api/court/case-queue'));
+        assert.equal((requests[0].body as any).source, 'twitch');
+        assert.equal((requests[0].body as any).submittedBy, 'viewer5');
+    });
+
+    it('blocks !prompt when minimum Twitch role is not met', async () => {
+        requests.length = 0;
+        const bot = new TwitchBot({
+            channel: 'test',
+            botToken: 'oauth:test',
+            clientId: 'cid',
+            apiBaseUrl: 'http://localhost:3000',
+            caseQueueSubmitToken: 'queue-secret',
+            promptMinRole: 'subscriber',
+            getActiveSessionId: async () => null,
+        });
+        await bot.handleChatMessage(
+            '!prompt The bailiff sued the fog machine',
+            'viewer7',
+            { isSubscriber: false },
+        );
+        assert.equal(requests.length, 0);
+    });
+
+    it('allows !prompt when minimum Twitch role is met', async () => {
+        requests.length = 0;
+        const bot = new TwitchBot({
+            channel: 'test',
+            botToken: 'oauth:test',
+            clientId: 'cid',
+            apiBaseUrl: 'http://localhost:3000',
+            caseQueueSubmitToken: 'queue-secret',
+            promptMinRole: 'subscriber',
+            getActiveSessionId: async () => null,
+        });
+        await bot.handleChatMessage(
+            '!prompt The bailiff sued the fog machine',
+            'viewer8',
+            { isSubscriber: true },
+        );
+        assert.equal(requests.length, 1);
+        assert.ok(requests[0].url.includes('/api/court/case-queue'));
+    });
+
+    it('allows !prompt for followers verified through Twitch Helix', async () => {
+        requests.length = 0;
+        const seenUrls: string[] = [];
+        globalThis.fetch = async (url: string | Request | URL, init?: RequestInit) => {
+            const urlString = String(url);
+            seenUrls.push(urlString);
+            if (urlString.includes('/helix/users')) {
+                return { ok: true, status: 200, json: async () => ({ data: [{ id: 'channel-1' }] }) } as Response;
+            }
+            if (urlString.includes('/helix/channels/followers')) {
+                return { ok: true, status: 200, json: async () => ({ data: [{ user_id: 'viewer-1' }] }) } as Response;
+            }
+            requests.push({
+                url: urlString,
+                body: JSON.parse((init?.body as string) ?? '{}'),
+            });
+            return { ok: true, status: 200, json: async () => ({}) } as Response;
+        };
+
+        const bot = new TwitchBot({
+            channel: 'testchannel',
+            botToken: 'oauth:test-token',
+            clientId: 'cid',
+            apiBaseUrl: 'http://localhost:3000',
+            caseQueueSubmitToken: 'queue-secret',
+            promptMinRole: 'follower',
+            getActiveSessionId: async () => null,
+        });
+        await bot.handleChatMessage(
+            '!prompt The witness was a suspiciously informed mailbox',
+            'viewer9',
+            { userId: 'viewer-1' },
+        );
+
+        assert.ok(seenUrls.some(url => url.includes('/helix/users')));
+        assert.ok(seenUrls.some(url => url.includes('/helix/channels/followers')));
+        assert.equal(requests.length, 1);
+        assert.ok(requests[0].url.includes('/api/court/case-queue'));
     });
 
     it('does not require TWITCH_CLIENT_SECRET for IRC command forwarding', async () => {

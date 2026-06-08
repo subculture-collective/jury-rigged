@@ -68,14 +68,52 @@ Read `[SPEC]` blocks for operating steps. Read `[BUG]` blocks for known failure 
 - Cause: dashboard assets were not built or are not available to the server.
 - Fix: run the dashboard build command, then restart or refresh the server.
 
-## 5. Persistence Modes
+## 5. Case Queue Operations
+
+**[SPEC]**
+- The Case Queue tab controls user-triggered and operator-triggered cases.
+- Twitch viewers submit cases with `!prompt <case idea>`.
+- Operators can submit a case directly from `/operator`.
+- Queued submitted cases run before generated fallback cases.
+- If no session is running, the scheduler starts the next queued case.
+- If no queued case exists, the scheduler starts a generated case when `AUTO_GENERATE_CASES=true`.
+- Operators can skip queued cases that are off-topic, unsafe, or low quality.
+- Operators can start a queued case immediately only when no other case is running.
+
+**[SPEC]**
+| Env var | Default | Purpose |
+| --- | --- | --- |
+| `AUTO_GENERATE_CASES` | `true` | Starts generated cases when queue is empty. |
+| `AUTO_CASE_IDLE_DELAY_MS` | `10000` | Wait before generated fallback starts after an idle gap. |
+| `CASE_QUEUE_POLL_MS` | `5000` | Scheduler polling interval. |
+| `CASE_QUEUE_SUBMIT_TOKEN` | unset | Required shared secret for bot-to-server public queue submission. |
+| `SIMULATION_AUTOSTART` | `true` | Set `false` to boot with automation paused. |
+| `LLM_FALLBACK_STOP_THRESHOLD` | `5` | Consecutive fallback/mock LLM responses before automation pauses and current session fails. |
+| `TWITCH_PROMPT_MIN_ROLE` | `everyone` | Minimum Twitch role for `!prompt`: `everyone`, `follower`, `subscriber`, `vip`, `moderator`, or `broadcaster`. |
+| `TWITCH_REFRESH_TOKEN` | unset | OAuth refresh token used to renew Twitch chat access automatically. |
+| `TWITCH_TOKEN_RUNTIME_PATH` | `/app/.runtime/twitch-token.json` | Runtime file for refreshed Twitch access/refresh token state. |
+| `TWITCH_TOKEN_REFRESH_SKEW_MS` | `600000` | Refresh Twitch access token this many ms before expiry. |
+
+**[SPEC]**
+- Use the Case Queue tab to pause or resume automation.
+- Pausing automation stops new cases from starting; it does not kill the currently running case.
+- Resuming automation clears the error state and lets queued/generated cases start on the next scheduler tick.
+- If the LLM falls back to mock dialogue too many times in a row, JuryRigged pauses automation, marks the current session failed, and shows the error in the Case Queue tab.
+
+**[NOTE]**
+Follower status is checked through Twitch Helix `channels/followers`, not IRC tags. The bot token must include `moderator:read:followers`, and the bot account must be a moderator or broadcaster for the channel. Patreon membership still requires a separate Patreon integration before it can be enforced reliably.
+
+**[NOTE]**
+Twitch access tokens are short-lived. JuryRigged uses `TWITCH_REFRESH_TOKEN`, `TWITCH_CLIENT_ID`, and `TWITCH_CLIENT_SECRET` to refresh the bot token before expiry, then writes refreshed token state to `TWITCH_TOKEN_RUNTIME_PATH` with owner-only file permissions. The Docker compose stack persists `/app/.runtime` in the `twitch_runtime` volume.
+
+## 6. Persistence Modes
 
 **[SPEC]**
 - With `DATABASE_URL`, sessions can use Postgres-backed persistence.
 - Without `DATABASE_URL`, sessions use in-memory storage.
 - In-memory sessions are suitable for local testing, not durable production operation.
 
-## 6. Health and Safety
+## 7. Health and Safety
 
 **[SPEC]**
 - Confirm the server is healthy before going live.
@@ -83,7 +121,7 @@ Read `[SPEC]` blocks for operating steps. Read `[BUG]` blocks for known failure 
 - Keep stream keys, API keys, and model provider keys out of overlays and screenshots.
 - Use a second monitor or separate browser profile for operator controls.
 
-## 7. Related Docs
+## 8. Related Docs
 
 **[SPEC]**
 - [[01-system-overview|System Overview]]
@@ -91,7 +129,8 @@ Read `[SPEC]` blocks for operating steps. Read `[BUG]` blocks for known failure 
 - [[05-viewer-and-chatter-guide|Viewer and Chatter Guide]]
 - [[glossary|Glossary]]
 
-## 8. Changelog
+## 9. Changelog
 
 **[SPEC]**
+- 1.1.0 — Added case queue operation and generated fallback rules.
 - 1.0.0 — Consolidated operator, moderation, and recovery guidance.

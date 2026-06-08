@@ -1,12 +1,12 @@
 /**
  * Twitch Chat Command Parser
  *
- * Parses chat commands like !press, !present, !vote, !sentence
+ * Parses chat commands like !prompt, !press, !present, !vote, !sentence
  * and validates parameters.
  */
 
 export interface CommandParseResult {
-    action: 'press' | 'present' | 'vote' | 'sentence';
+    action: 'prompt' | 'press' | 'present' | 'vote' | 'sentence';
     username: string;
     timestamp: number;
     params: Record<string, any>;
@@ -32,6 +32,9 @@ export function parseCommand(
 
     try {
         switch (command) {
+            case '!prompt':
+                return parsePromptCommand(parts, username);
+
             case '!press':
                 return parsePressCommand(parts, username);
 
@@ -51,6 +54,28 @@ export function parseCommand(
         console.warn(`Failed to parse command: ${rawMessage}`, err);
         return null;
     }
+}
+
+/**
+ * Parse !prompt command
+ * Format: !prompt <fictional case idea>
+ */
+function parsePromptCommand(
+    parts: string[],
+    username: string,
+): CommandParseResult | null {
+    const prompt = parts.slice(1).join(' ').trim().replace(/\s+/g, ' ');
+    if (prompt.length < 10 || prompt.length > 500) {
+        console.warn(`Invalid !prompt command length: ${prompt.length}`);
+        return null;
+    }
+
+    return {
+        action: 'prompt',
+        username,
+        timestamp: Date.now(),
+        params: { prompt },
+    };
 }
 
 /**
@@ -184,6 +209,13 @@ export function validateCommand(cmd: CommandParseResult): boolean {
             return (
                 !isNaN(cmd.params.statementNumber) &&
                 cmd.params.statementNumber > 0
+            );
+
+        case 'prompt':
+            return (
+                typeof cmd.params.prompt === 'string' &&
+                cmd.params.prompt.length >= 10 &&
+                cmd.params.prompt.length <= 500
             );
 
         case 'present':

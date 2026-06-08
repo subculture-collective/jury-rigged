@@ -36,6 +36,8 @@ services:
             DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-change_this_now}@db:5432/juryrigged
         ports:
             - '${API_BIND_ADDR:-127.0.0.1}:${API_HOST_PORT:-3001}:3001'
+        volumes:
+            - twitch_runtime:/app/.runtime
         networks:
             - internal
             - web
@@ -43,6 +45,7 @@ services:
 
 volumes:
     postgres_data:
+    twitch_runtime:
 
 networks:
     internal:

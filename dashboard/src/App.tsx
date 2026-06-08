@@ -54,10 +54,12 @@ type DashboardTabId =
     | 'ops'
     | 'recap'
     | 'controls'
+    | 'caseQueue'
     | 'analytics';
 
 const loadModerationQueue = () => import('./components/ModerationQueue');
 const loadManualControls = () => import('./components/ManualControls');
+const loadCaseQueue = () => import('./components/CaseQueue');
 const loadAnalytics = () => import('./components/Analytics');
 const loadLLMAuditLog = () => import('./components/LLMAuditLog');
 const loadOpsMetrics = () => import('./components/OpsMetrics');
@@ -70,6 +72,11 @@ const ModerationQueue = lazy(async () => {
 const ManualControls = lazy(async () => {
     const module = await loadManualControls();
     return { default: module.ManualControls };
+});
+
+const CaseQueue = lazy(async () => {
+    const module = await loadCaseQueue();
+    return { default: module.CaseQueue };
 });
 
 const Analytics = lazy(async () => {
@@ -121,6 +128,12 @@ const TABS: DashboardTab[] = [
         label: 'Manual Controls',
         icon: '🎛️',
         preload: loadManualControls,
+    },
+    {
+        id: 'caseQueue',
+        label: 'Case Queue',
+        icon: '⚖️',
+        preload: loadCaseQueue,
     },
     {
         id: 'analytics',
@@ -485,6 +498,12 @@ function App() {
                         }
                     >
                         <ManualControls sessionId={sessionId} />
+                    </Suspense>
+                );
+            case 'caseQueue':
+                return (
+                    <Suspense fallback={<TabFallback message='Loading case queue...' />}>
+                        <CaseQueue />
                     </Suspense>
                 );
             case 'analytics':

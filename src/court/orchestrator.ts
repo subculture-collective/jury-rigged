@@ -74,6 +74,13 @@ const MODERATION_REDIRECT_DIALOGUE =
 
 const broadcastBySession = new Map<string, BroadcastAdapter>();
 
+export class FallbackCircuitOpenError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'FallbackCircuitOpenError';
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Phase 7: Render directive inference (#70)
 // ---------------------------------------------------------------------------
@@ -255,6 +262,8 @@ async function generateTurn(input: {
         completionTokens: number;
     }) => void;
     auditLogStore?: LLMAuditLogStore;
+    onLlmFallback?: RunCourtSessionOptions['onLlmFallback'];
+    onLlmSuccess?: RunCourtSessionOptions['onLlmSuccess'];
 }): Promise<CourtTurn> {
     const { store, session, speaker, role, userInstruction } = input;
 
@@ -283,6 +292,16 @@ async function generateTurn(input: {
         temperature: session.phase === 'witness_exam' ? 0.8 : 0.7,
         maxTokens: budgetResolution.appliedMaxTokens,
     });
+    if (llmResult.status === 'fallback' || llmResult.status === 'mock') {
+        await input.onLlmFallback?.({
+            sessionId: session.id,
+            status: llmResult.status,
+            provider: llmResult.provider,
+            model: llmResult.model,
+        });
+    } else {
+        input.onLlmSuccess?.({ sessionId: session.id });
+    }
     const raw = llmResult.text;
 
     let dialogue = sanitizeDialogue(raw);
@@ -404,6 +423,13 @@ export interface RunCourtSessionOptions {
     ttsAdapter?: TTSAdapter;
     sleepFn?: (ms: number) => Promise<void>;
     auditLogStore?: LLMAuditLogStore;
+    onLlmFallback?: (event: {
+        sessionId: string;
+        status: string;
+        provider: string;
+        model: string;
+    }) => Promise<void> | void;
+    onLlmSuccess?: (event: { sessionId: string }) => Promise<void> | void;
 }
 
 type GenerateTurnInput = Parameters<typeof generateTurn>[0];
@@ -412,6 +438,8 @@ function createGenerateBudgetedTurn(input: {
     roleTokenBudgetConfig: RoleTokenBudgetConfig;
     onTokenSample: (sample: TokenSample) => void;
     auditLogStore?: LLMAuditLogStore;
+    onLlmFallback?: RunCourtSessionOptions['onLlmFallback'];
+    onLlmSuccess?: RunCourtSessionOptions['onLlmSuccess'];
 }): GenerateBudgetedTurn {
     return turnInput =>
         generateTurn({
@@ -419,6 +447,8 @@ function createGenerateBudgetedTurn(input: {
             roleBudgetConfig: input.roleTokenBudgetConfig,
             onTokenSample: input.onTokenSample,
             auditLogStore: input.auditLogStore,
+            onLlmFallback: input.onLlmFallback,
+            onLlmSuccess: input.onLlmSuccess,
         });
 }
 
@@ -638,6 +668,8 @@ export async function runCourtSession(
         roleTokenBudgetConfig,
         onTokenSample,
         auditLogStore: options.auditLogStore,
+        onLlmFallback: options.onLlmFallback,
+        onLlmSuccess: options.onLlmSuccess,
     });
     const safelySpeak = createSafelySpeak({
         tts,

@@ -52,17 +52,31 @@ Read `[SPEC]` blocks for current viewer behavior. Treat `[?]` sections as placeh
 
 ## 4. Chat Commands
 
-**[?]**
-Chat commands are not final. This section is reserved for the eventual audience command contract.
+**[SPEC]**
+The Twitch bot recognizes these commands when Twitch credentials are configured:
 
-| Placeholder | Possible meaning | Notes |
+| Command | Meaning | Notes |
 | --- | --- | --- |
-| `!prompt` | Suggest a future case. | Should require moderation before use. |
-| `!press` | Ask the court to press a witness or topic. | May become a vote/counter instead of direct action. |
-| `!present` | Suggest evidence. | Should be constrained to safe formats. |
-| `!objection` | Add audience objection energy. | May be cosmetic or rate-limited. |
+| `!prompt <case idea>` | Submit a fictional case idea to the visible queue. | Queued prompts run before generated cases. |
+| `!commands` / `!help` | Show command help in chat. | Works even when no case is running. |
+| `!case` / `!status` | Show whether court is live and where to watch. | Works even when no case is running. |
+| `!press <statement #>` | Ask the court to press a witness statement. | Requires a running session. |
+| `!present <evidence id> [statement #]` | Suggest evidence for the current exchange. | Requires a running session. |
+| `!vote <choice>` | Cast a verdict vote. | Valid during verdict voting windows. |
+| `!sentence <choice>` | Cast a sentencing vote. | Valid during sentence voting windows. |
+| `!objection` | Get a playful bot response. | Informational/cosmetic for now. |
 
-## 5. Chat Safety
+## 5. Case Automation Queue
+
+**[SPEC]**
+- JuryRigged can keep court running with generated cases.
+- Chat-submitted cases use `!prompt <case idea>`.
+- The stream owner may restrict `!prompt` to followers, subscribers, VIPs, moderators, or broadcaster-only mode.
+- Submitted cases enter a visible queue on the public page.
+- Queued submitted cases run before generated fallback cases.
+- If the queue is empty after a case ends, the next case is generated automatically.
+
+## 6. Chat Safety
 
 **[SPEC]**
 - Keep prompts fictional and PG-13.
@@ -71,21 +85,22 @@ Chat commands are not final. This section is reserved for the eventual audience 
 - Do not try to force unsafe content into the show.
 - Operators may ignore, redact, or reject unsafe submissions.
 
-## 6. Useful Phrases
+## 7. Useful Phrases
 
 **[SPEC]**
 - “All rise. The stream is now in session.”
 - “The jury may now make a terrible decision.”
 - “Objection sustained, mostly for vibes.”
 
-## 7. Related Docs
+## 8. Related Docs
 
 **[SPEC]**
 - [[04-streamer-guide|Streamer Guide]]
 - [[03-operator-guide|Operator Guide]]
 - [[glossary|Glossary]]
 
-## 8. Changelog
+## 9. Changelog
 
 **[SPEC]**
+- 1.1.0 — Added live `!prompt` queue and generated fallback behavior.
 - 1.0.0 — Added audience-facing guide and command placeholder area.
