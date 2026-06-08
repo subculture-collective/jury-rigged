@@ -118,7 +118,11 @@ test('replay mode re-emits NDJSON events on SSE with session rewriting', async (
     );
 
     const previousDatabaseUrl = process.env.DATABASE_URL;
+    const previousAdminPassword = process.env.ADMIN_PASSWORD;
+    const previousAdminTokenSecret = process.env.ADMIN_TOKEN_SECRET;
     process.env.DATABASE_URL = '';
+    delete process.env.ADMIN_PASSWORD;
+    delete process.env.ADMIN_TOKEN_SECRET;
 
     let server: Server | undefined;
     let dispose: (() => void) | undefined;
@@ -126,6 +130,7 @@ test('replay mode re-emits NDJSON events on SSE with session rewriting', async (
     try {
         const created = await createServerApp({
             replay: { filePath: replayFile, speed: 4 },
+            startTwitchBot: false,
         });
 
         dispose = created.dispose;
@@ -179,6 +184,16 @@ test('replay mode re-emits NDJSON events on SSE with session rewriting', async (
             delete process.env.DATABASE_URL;
         } else {
             process.env.DATABASE_URL = previousDatabaseUrl;
+        }
+        if (previousAdminPassword === undefined) {
+            delete process.env.ADMIN_PASSWORD;
+        } else {
+            process.env.ADMIN_PASSWORD = previousAdminPassword;
+        }
+        if (previousAdminTokenSecret === undefined) {
+            delete process.env.ADMIN_TOKEN_SECRET;
+        } else {
+            process.env.ADMIN_TOKEN_SECRET = previousAdminTokenSecret;
         }
     }
 });

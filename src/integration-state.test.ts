@@ -11,13 +11,20 @@ let baseUrl = '';
 let dispose: () => void;
 let store: CourtSessionStore;
 let previousDatabaseUrl: string | undefined;
+let previousAdminPassword: string | undefined;
+let previousAdminTokenSecret: string | undefined;
 
 before(async () => {
     previousDatabaseUrl = process.env.DATABASE_URL;
+    previousAdminPassword = process.env.ADMIN_PASSWORD;
+    previousAdminTokenSecret = process.env.ADMIN_TOKEN_SECRET;
     process.env.DATABASE_URL = '';
+    delete process.env.ADMIN_PASSWORD;
+    delete process.env.ADMIN_TOKEN_SECRET;
 
     const created = await createServerApp({
         autoRunCourtSession: false,
+        startTwitchBot: false,
     });
 
     store = created.store;
@@ -44,6 +51,10 @@ after(async () => {
     } else {
         process.env.DATABASE_URL = previousDatabaseUrl;
     }
+    if (previousAdminPassword === undefined) delete process.env.ADMIN_PASSWORD;
+    else process.env.ADMIN_PASSWORD = previousAdminPassword;
+    if (previousAdminTokenSecret === undefined) delete process.env.ADMIN_TOKEN_SECRET;
+    else process.env.ADMIN_TOKEN_SECRET = previousAdminTokenSecret;
 });
 
 async function postJson(path: string, body: Record<string, unknown>) {

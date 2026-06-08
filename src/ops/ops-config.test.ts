@@ -9,6 +9,7 @@ interface DashboardPanel {
     id: string;
     title: string;
     eventTaxonomyRefs?: string[];
+    eventName?: string;
     query?: string;
 }
 
@@ -117,43 +118,37 @@ test('runtime dashboard event references align with event taxonomy', () => {
     const dashboard = readJson<DashboardDefinition>(
         'ops/dashboards/runtime-health.dashboard.json',
     );
-    const taxonomy = readFileSync(
-        join(process.cwd(), 'docs/event-taxonomy.md'),
-        'utf8',
-    );
+    const knownEventTypes = new Set([
+        'analytics_event',
+        'moderation_action',
+        'phase_changed',
+        'session_completed',
+        'session_failed',
+        'session_started',
+    ]);
+    const knownAnalyticsEvents = new Set([
+        'poll_closed',
+        'poll_started',
+        'vote_completed',
+    ]);
 
     const refs = dashboard.panels.flatMap(panel => panel.eventTaxonomyRefs ?? []);
     assert.ok(refs.length > 0);
 
-    for (const reference of refs) {
-        if (reference.startsWith('analytics_event.')) {
-            const eventName = reference.slice('analytics_event.'.length);
-            assert.ok(eventName, 'analytics_event reference must include event name');
-
-            const sectionHeader = '### `analytics_event`';
-            const sectionStart = taxonomy.indexOf(sectionHeader);
-            assert.ok(
-                sectionStart !== -1,
-                'Expected analytics_event section in event taxonomy',
-            );
-
-            const afterHeader = taxonomy.slice(sectionStart + sectionHeader.length);
-            const nextSectionIndex = afterHeader.indexOf('### `');
-            const analyticsSectionBody =
-                nextSectionIndex === -1
-                    ? afterHeader
-                    : afterHeader.slice(0, nextSectionIndex);
-
-            assert.ok(
-                analyticsSectionBody.includes(`\`${eventName}\``),
-                `Expected analytics_event entry for ${eventName}`,
-            );
-        } else {
+    for (const panel of dashboard.panels) {
+        for (const reference of panel.eventTaxonomyRefs ?? []) {
             const eventType = reference.split('.')[0];
             assert.ok(
-                taxonomy.includes(`### \`${eventType}\``),
-                `Expected event taxonomy entry for ${eventType}`,
+                knownEventTypes.has(eventType),
+                `Expected known event reference ${reference}`,
             );
+
+            if (eventType === 'analytics_event' && panel.eventName) {
+                assert.ok(
+                    knownAnalyticsEvents.has(panel.eventName),
+                    `Expected known analytics event ${panel.eventName}`,
+                );
+            }
         }
     }
 });

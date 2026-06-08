@@ -415,6 +415,14 @@ interface SimulationControlState {
     lastFallbackAt?: string;
 }
 
+function courtValidationError(
+    message: string,
+    code: string,
+    details?: Record<string, unknown>,
+): CourtValidationError {
+    return Object.assign(new CourtValidationError(message), { code, details });
+}
+
 async function createCourtSession(
     deps: SessionRouteDeps,
     input: CreateCourtSessionInput = {},
@@ -438,18 +446,20 @@ async function createCourtSession(
         logger.error('[server] selectNextSafePrompt failed:', {
             error: error instanceof Error ? error.message : error,
         });
-        throw new CourtValidationError('No safe prompts available');
+        throw courtValidationError('No safe prompts available', 'SAFE_PROMPT_UNAVAILABLE');
     }
 
     const userTopic = typeof input.topic === 'string' ? input.topic.trim() : '';
     if (userTopic && userTopic.length < 10) {
-        throw new CourtValidationError('topic must be at least 10 characters');
+        throw courtValidationError('topic must be at least 10 characters', 'INVALID_TOPIC');
     }
 
     if (userTopic) {
         const moderation = moderateContent(userTopic);
         if (moderation.flagged) {
-            throw new CourtValidationError('topic violates safety policy');
+            throw courtValidationError('topic violates safety policy', 'TOPIC_REJECTED', {
+                reasons: moderation.reasons,
+            });
         }
     }
 
@@ -554,7 +564,17 @@ function createSessionHandler(deps: SessionRouteDeps) {
             return res.status(201).json({ session });
         } catch (error) {
             if (error instanceof CourtValidationError) {
-                return sendError(res, 400, 'INVALID_SESSION_INPUT', error.message);
+                const enriched = error as CourtValidationError & {
+                    code?: string;
+                    details?: Record<string, unknown>;
+                };
+                return sendError(
+                    res,
+                    enriched.code === 'SAFE_PROMPT_UNAVAILABLE' ? 503 : 400,
+                    enriched.code ?? 'INVALID_SESSION_INPUT',
+                    error.message,
+                    enriched.details,
+                );
             }
             const message =
                 error instanceof Error ?
@@ -1506,6 +1526,7 @@ function registerApiRoutes(
 export interface CreateServerAppOptions {
     autoRunCourtSession?: boolean;
     autoGenerateCases?: boolean;
+    startTwitchBot?: boolean;
     store?: CourtSessionStore;
     replay?: ReplayRuntimeOptions;
 }
@@ -1717,52 +1738,54 @@ export async function createServerApp(
     void runCaseScheduler();
 
     // Start Twitch bot (noop if credentials absent)
-    const twitchBot = initTwitchBot({
-        channel: process.env.TWITCH_CHANNEL ?? '',
-        botUsername: process.env.TWITCH_BOT_USERNAME || undefined,
-        botToken: process.env.TWITCH_BOT_TOKEN ?? '',
-        clientId: process.env.TWITCH_CLIENT_ID ?? '',
-        clientSecret: process.env.TWITCH_CLIENT_SECRET || undefined,
-        refreshToken: process.env.TWITCH_REFRESH_TOKEN || undefined,
-        tokenRuntimePath:
-            process.env.TWITCH_TOKEN_RUNTIME_PATH || '/app/.runtime/twitch-token.json',
-        tokenRefreshSkewMs: Number(
-            process.env.TWITCH_TOKEN_REFRESH_SKEW_MS ?? 600000,
-        ),
-        apiBaseUrl: `http://localhost:${process.env.PORT ?? 3000}`,
-        publicBaseUrl:
-            process.env.PUBLIC_BASE_URL || 'https://jury-rigged.subcult.tv',
-        helpIntervalMs: Number(process.env.TWITCH_HELP_INTERVAL_MS ?? 900000),
-        welcomeFirstChatters:
-            process.env.TWITCH_WELCOME_FIRST_CHATTERS !== 'false',
-        caseQueueSubmitToken: process.env.CASE_QUEUE_SUBMIT_TOKEN || undefined,
-        promptMinRole:
-            process.env.TWITCH_PROMPT_MIN_ROLE === 'follower' ? 'follower'
-            : process.env.TWITCH_PROMPT_MIN_ROLE === 'subscriber' ? 'subscriber'
-            : process.env.TWITCH_PROMPT_MIN_ROLE === 'vip' ? 'vip'
-            : process.env.TWITCH_PROMPT_MIN_ROLE === 'moderator' ? 'moderator'
-            : process.env.TWITCH_PROMPT_MIN_ROLE === 'broadcaster' ? 'broadcaster'
-            : 'everyone',
-        getActiveSessionId: (() => {
-            let cachedId: string | null = null;
-            let cacheExpiresAt = 0;
-            return async () => {
-                const now = Date.now();
-                if (now < cacheExpiresAt) return cachedId;
-                const sessions = await store.listSessions();
-                const running = sessions.find(s => s.status === 'running');
-                cachedId = running?.id ?? null;
-                cacheExpiresAt = now + 5_000; // cache for 5 sec; commands to a just-ended session fail gracefully
-                return cachedId;
-            };
-        })(),
-    });
+    if (options.startTwitchBot !== false) {
+        const twitchBot = initTwitchBot({
+            channel: process.env.TWITCH_CHANNEL ?? '',
+            botUsername: process.env.TWITCH_BOT_USERNAME || undefined,
+            botToken: process.env.TWITCH_BOT_TOKEN ?? '',
+            clientId: process.env.TWITCH_CLIENT_ID ?? '',
+            clientSecret: process.env.TWITCH_CLIENT_SECRET || undefined,
+            refreshToken: process.env.TWITCH_REFRESH_TOKEN || undefined,
+            tokenRuntimePath:
+                process.env.TWITCH_TOKEN_RUNTIME_PATH || '/app/.runtime/twitch-token.json',
+            tokenRefreshSkewMs: Number(
+                process.env.TWITCH_TOKEN_REFRESH_SKEW_MS ?? 600000,
+            ),
+            apiBaseUrl: `http://localhost:${process.env.PORT ?? 3000}`,
+            publicBaseUrl:
+                process.env.PUBLIC_BASE_URL || 'https://jury-rigged.subcult.tv',
+            helpIntervalMs: Number(process.env.TWITCH_HELP_INTERVAL_MS ?? 900000),
+            welcomeFirstChatters:
+                process.env.TWITCH_WELCOME_FIRST_CHATTERS !== 'false',
+            caseQueueSubmitToken: process.env.CASE_QUEUE_SUBMIT_TOKEN || undefined,
+            promptMinRole:
+                process.env.TWITCH_PROMPT_MIN_ROLE === 'follower' ? 'follower'
+                : process.env.TWITCH_PROMPT_MIN_ROLE === 'subscriber' ? 'subscriber'
+                : process.env.TWITCH_PROMPT_MIN_ROLE === 'vip' ? 'vip'
+                : process.env.TWITCH_PROMPT_MIN_ROLE === 'moderator' ? 'moderator'
+                : process.env.TWITCH_PROMPT_MIN_ROLE === 'broadcaster' ? 'broadcaster'
+                : 'everyone',
+            getActiveSessionId: (() => {
+                let cachedId: string | null = null;
+                let cacheExpiresAt = 0;
+                return async () => {
+                    const now = Date.now();
+                    if (now < cacheExpiresAt) return cachedId;
+                    const sessions = await store.listSessions();
+                    const running = sessions.find(s => s.status === 'running');
+                    cachedId = running?.id ?? null;
+                    cacheExpiresAt = now + 5_000; // cache for 5 sec; commands to a just-ended session fail gracefully
+                    return cachedId;
+                };
+            })(),
+        });
 
-    twitchBot.start().catch(err => {
-        logger.warn(
-            `[Twitch Bot] Failed to start: ${err instanceof Error ? err.message : String(err)}`,
-        );
-    });
+        twitchBot.start().catch(err => {
+            logger.warn(
+                `[Twitch Bot] Failed to start: ${err instanceof Error ? err.message : String(err)}`,
+            );
+        });
+    }
 
     registerStaticAndSpaRoutes(app, {
         appDir,

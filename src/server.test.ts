@@ -25,6 +25,7 @@ before(async () => {
 
     const created = await createServerApp({
         autoRunCourtSession: false,
+        startTwitchBot: false,
     });
 
     dispose = created.dispose;
@@ -236,7 +237,7 @@ test('admin auth protects operator and admin APIs while public routes stay open'
     process.env.ADMIN_TOKEN_SECRET = 'test-admin-token-secret';
     process.env.ADMIN_COOKIE_SECURE = 'false';
 
-    const created = await createServerApp({ autoRunCourtSession: false });
+    const created = await createServerApp({ autoRunCourtSession: false, startTwitchBot: false });
     const authServer = created.app.listen(0);
 
     try {
