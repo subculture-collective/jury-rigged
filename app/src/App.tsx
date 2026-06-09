@@ -726,6 +726,14 @@ function OverlayView() {
   const runtime = session ? formatDuration(session.startedAt ?? session.createdAt, now) : '00:00:00';
   const liveStamp = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '--:--:--';
   const connectedLed = connected ? 'live' : 'sync';
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = transcriptRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [transcriptTurns]);
 
   useEffect(() => {
     if (!session) { setStinger(null); return undefined; }
@@ -785,7 +793,7 @@ function OverlayView() {
               <span className="flex-1" />
               <span className="text-[hsl(var(--ink-mute))]">{session.turnCount}T / {transcriptTurns.length}V</span>
             </div>
-            <div className="flex-1 overflow-y-auto px-4" role="log" aria-live="polite" aria-relevant="additions text">
+            <div ref={transcriptRef} className="flex-1 overflow-y-auto px-4" role="log" aria-live="polite" aria-relevant="additions text">
               {transcriptTurns.length > 0 ? (
                 <div className="py-2 space-y-0">
                   {transcriptTurns.map((turn, index) => {
