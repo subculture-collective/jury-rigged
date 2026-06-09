@@ -538,11 +538,11 @@ function roleToneClass(tone: RoleTone) {
     case 'defense':
       return 'text-[hsl(var(--purple))]';
     case 'witness':
-      return 'text-emerald-300';
+      return 'text-[hsl(var(--green))]';
     case 'bailiff':
-      return 'text-sky-300';
+      return 'text-[hsl(var(--muted))]';
     case 'jury':
-      return 'text-amber-200';
+      return 'text-[hsl(var(--cyan))]';
     default:
       return 'text-[hsl(var(--text))]';
   }
@@ -551,19 +551,19 @@ function roleToneClass(tone: RoleTone) {
 function roleAccentClass(tone: RoleTone) {
   switch (tone) {
     case 'judge':
-      return 'from-[hsl(var(--gold)/0.36)]';
+      return 'border-l-[hsl(var(--gold))] bg-[hsl(var(--surface-2))]';
     case 'prosecutor':
-      return 'from-[hsl(var(--cyan)/0.34)]';
+      return 'border-l-[hsl(var(--cyan))] bg-[hsl(var(--surface-2))]';
     case 'defense':
-      return 'from-[hsl(var(--purple)/0.34)]';
+      return 'border-l-[hsl(var(--purple))] bg-[hsl(var(--surface-2))]';
     case 'witness':
-      return 'from-emerald-400/30';
+      return 'border-l-[hsl(var(--green))] bg-[hsl(var(--surface-2))]';
     case 'bailiff':
-      return 'from-sky-400/30';
+      return 'border-l-[hsl(var(--muted))] bg-[hsl(var(--surface-2))]';
     case 'jury':
-      return 'from-amber-300/28';
+      return 'border-l-[hsl(var(--cyan))] bg-[hsl(var(--surface-2))]';
     default:
-      return 'from-white/12';
+      return 'border-l-[hsl(var(--border))] bg-[hsl(var(--surface-2))]';
   }
 }
 
@@ -646,9 +646,9 @@ function stingerFromEvent(event: LiveOverlayEvent | null): OverlayStinger | null
 }
 
 function stingerToneClass(tone: OverlayStinger['tone']) {
-  if (tone === 'gold') return 'text-[hsl(var(--gold))] border-[hsl(var(--gold)/0.45)] shadow-[0_24px_90px_hsl(var(--gold)/0.16)]';
-  if (tone === 'purple') return 'text-[hsl(var(--purple))] border-[hsl(var(--purple)/0.45)] shadow-[0_24px_90px_hsl(var(--purple)/0.18)]';
-  return 'text-[hsl(var(--cyan))] border-[hsl(var(--cyan)/0.45)] shadow-[0_24px_90px_hsl(var(--cyan)/0.16)]';
+  if (tone === 'gold') return 'text-[hsl(var(--gold))] border-[hsl(var(--gold))] shadow-[8px_8px_0_hsl(var(--shadow))]';
+  if (tone === 'purple') return 'text-[hsl(var(--purple))] border-[hsl(var(--purple))] shadow-[8px_8px_0_hsl(var(--shadow))]';
+  return 'text-[hsl(var(--cyan))] border-[hsl(var(--cyan))] shadow-[8px_8px_0_hsl(var(--shadow))]';
 }
 
 function formatDuration(startedAt?: string, now = Date.now()) {
@@ -989,7 +989,7 @@ function App() {
   return (
     <div className="min-h-screen bg-[hsl(var(--bg))] text-[hsl(var(--text))]">
       <div className="mx-auto flex min-h-screen max-w-[1680px] flex-col gap-5 px-4 py-4 lg:px-6">
-        <header className="rounded-[2rem] border border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.82)] px-4 py-4 shadow-[0_24px_80px_rgba(0,0,0,0.3)] backdrop-blur-xl lg:px-6">
+        <header className="rounded-2xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface))] px-4 py-4 shadow-[8px_8px_0_hsl(var(--shadow))] lg:px-6">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-3">
@@ -1130,10 +1130,10 @@ function CaseAutomationCard({ snapshot, error }: { snapshot: CaseQueueSnapshot |
 
 function OverlayStandby({ loading, error }: { loading: boolean; error: string | null }) {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[hsl(var(--bg))] text-[hsl(var(--text))]">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,hsl(var(--cyan)/0.14),transparent_32%),radial-gradient(circle_at_85%_10%,hsl(var(--purple)/0.12),transparent_28%),linear-gradient(180deg,hsl(var(--bg))_0%,hsl(211_41%_5%)_100%)]" />
-      <div className="relative flex min-h-screen items-center justify-center p-8">
-        <div className="max-w-2xl rounded-[2.5rem] border border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.82)] px-8 py-10 text-center shadow-[0_30px_90px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:px-10">
+    <div className="grid min-h-screen place-items-center overflow-hidden bg-[hsl(var(--bg))] text-[hsl(var(--text))]">
+      <div className="relative aspect-video w-screen max-w-[calc(100vh*16/9)] overflow-hidden border-2 border-[hsl(var(--border)/0.45)]">
+      <div className="overlay-safe relative flex h-full items-center justify-center">
+        <div className="max-w-2xl rounded-2xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface))] px-8 py-10 text-center shadow-[8px_8px_0_hsl(var(--shadow))] sm:px-10">
           <LivePill text={loading ? 'CONNECTING' : 'STANDBY'} />
           <h1 className="mt-5 text-3xl font-semibold tracking-tight text-[hsl(var(--text))] sm:text-4xl">Waiting for a running courtroom session</h1>
           <p className="mt-4 text-sm leading-6 text-[hsl(var(--muted))]">
@@ -1145,6 +1145,7 @@ function OverlayStandby({ loading, error }: { loading: boolean; error: string | 
           </div>
           {error ? <p className="mt-5 text-xs uppercase tracking-[0.22em] text-[hsl(var(--gold))]">{error}</p> : null}
         </div>
+      </div>
       </div>
     </div>
   );
@@ -1163,13 +1164,13 @@ function SocialSignalCard({
 }) {
   const toneClass =
     tone === 'gold'
-      ? 'border-[hsl(var(--gold)/0.34)] bg-[hsl(var(--gold)/0.08)] text-[hsl(var(--gold))]'
+      ? 'border-[hsl(var(--gold))] bg-[hsl(var(--surface-2))] text-[hsl(var(--gold))]'
       : tone === 'purple'
-        ? 'border-[hsl(var(--purple)/0.34)] bg-[hsl(var(--purple)/0.08)] text-[hsl(var(--purple))]'
-        : 'border-[hsl(var(--cyan)/0.34)] bg-[hsl(var(--cyan)/0.08)] text-[hsl(var(--cyan))]';
+        ? 'border-[hsl(var(--purple))] bg-[hsl(var(--surface-2))] text-[hsl(var(--purple))]'
+        : 'border-[hsl(var(--cyan))] bg-[hsl(var(--surface-2))] text-[hsl(var(--cyan))]';
 
   return (
-    <article className={cn('rounded-[1.2rem] border px-4 py-3', toneClass)}>
+    <article className={cn('rounded-xl border-2 px-4 py-3 shadow-[4px_4px_0_hsl(var(--shadow))]', toneClass)}>
       <p className="font-monoish text-sm uppercase tracking-[0.2em] opacity-80">{label}</p>
       <p className="mt-2 truncate text-xl font-semibold text-[hsl(var(--text))]">{person?.displayName ?? fallback}</p>
       <p className="mt-1 text-sm leading-5 text-[hsl(var(--muted))]">
@@ -1236,12 +1237,12 @@ function OverlayView() {
   const activeCard = sidebarCards[activePanel] ?? sidebarCards[0];
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[hsl(var(--bg))] text-[hsl(var(--text))]">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,hsl(var(--cyan)/0.16),transparent_28%),radial-gradient(circle_at_82%_14%,hsl(var(--purple)/0.16),transparent_26%),radial-gradient(circle_at_72%_78%,hsl(var(--gold)/0.08),transparent_30%),linear-gradient(180deg,hsl(var(--bg))_0%,hsl(211_41%_5%)_100%)]" />
+    <div className="grid min-h-screen place-items-center overflow-hidden bg-[hsl(var(--bg))] text-[hsl(var(--text))]">
+      <div className="relative aspect-video w-screen max-w-[calc(100vh*16/9)] overflow-hidden border-2 border-[hsl(var(--border)/0.45)]">
       {stinger ? (
         <div
           className={cn(
-            'pointer-events-none absolute right-8 top-28 z-20 max-w-md rounded-[2rem] border bg-[hsl(var(--surface)/0.94)] px-6 py-5 backdrop-blur-xl motion-safe:animate-pulse',
+            'pointer-events-none absolute right-8 top-28 z-20 max-w-md rounded-xl border-2 bg-[hsl(var(--surface))] px-6 py-5 motion-safe:animate-pulse',
             stingerToneClass(stinger.tone),
           )}
         >
@@ -1250,13 +1251,13 @@ function OverlayView() {
           <p className="mt-2 text-base leading-7 text-[hsl(var(--muted))]">{stinger.message}</p>
         </div>
       ) : null}
-      <div className="relative flex min-h-screen flex-col gap-4 p-6 xl:p-8">
-        <header className="flex items-start justify-between gap-4 rounded-[2.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.82)] px-6 py-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+      <div className="overlay-safe relative flex h-full flex-col gap-4">
+        <header className="flex items-start justify-between gap-4 rounded-2xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface))] px-6 py-5 shadow-[8px_8px_0_hsl(var(--shadow))]">
           <div className="min-w-0 space-y-3">
             <div className="flex flex-wrap items-center gap-3">
               <p className="font-monoish text-sm uppercase tracking-[0.32em] text-[hsl(var(--cyan))]">JuryRigged · Live overlay</p>
               <LivePill text={connected ? 'LIVE' : 'SYNCING'} />
-              <span className="rounded-full border border-[hsl(var(--border))] bg-black/10 px-3 py-1 text-sm uppercase tracking-[0.2em] text-[hsl(var(--muted))]">{session.phase}</span>
+              <span className="rounded-md border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-3 py-1 text-sm uppercase tracking-[0.2em] text-[hsl(var(--muted))]">{session.phase}</span>
             </div>
             <h1 className="text-3xl font-semibold tracking-tight text-[hsl(var(--text))] sm:text-4xl">{session.topic}</h1>
             <p className="max-w-4xl text-base leading-7 text-[hsl(var(--muted))]">{session.metadata.casePrompt}</p>
@@ -1277,10 +1278,10 @@ function OverlayView() {
                   <p className="font-monoish text-sm uppercase tracking-[0.28em] text-[hsl(var(--cyan))]">Current beat</p>
                   <h2 className="mt-2 text-3xl font-semibold text-[hsl(var(--text))]">Transcript feed</h2>
                 </div>
-                <div className="rounded-full border border-[hsl(var(--border))] bg-black/10 px-3 py-1 text-sm uppercase tracking-[0.22em] text-[hsl(var(--muted))]">{session.turnCount} turns · showing {transcriptTurns.length}</div>
+                <div className="rounded-md border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-3 py-1 text-sm uppercase tracking-[0.22em] text-[hsl(var(--muted))]">{session.turnCount} turns · showing {transcriptTurns.length}</div>
               </div>
 
-              <div className="mt-5 min-h-0 flex-1 overflow-hidden rounded-[1.75rem] border border-[hsl(var(--border))] bg-black/15">
+              <div className="mt-5 min-h-0 flex-1 overflow-hidden rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))]">
                 <div className="flex items-center justify-between gap-3 border-b border-[hsl(var(--border))] px-4 py-3">
                   <p className="font-monoish text-sm uppercase tracking-[0.26em] text-[hsl(var(--muted))]">Newest first</p>
                   <p className="text-sm uppercase tracking-[0.22em] text-[hsl(var(--muted))]">{session.phase} · live transcript</p>
@@ -1294,9 +1295,8 @@ function OverlayView() {
                         <article key={turn.id} className={cn('group flex w-full', alignRight ? 'justify-end text-right' : 'justify-start text-left')}>
                           <div
                             className={cn(
-                              'max-w-[88%] border-t border-white/10 bg-gradient-to-r px-1 py-3',
+                              'max-w-[88%] border-l-4 border-t border-t-[hsl(var(--border))] px-4 py-3',
                               roleAccentClass(tone),
-                              alignRight ? 'bg-gradient-to-l' : 'bg-gradient-to-r',
                             )}
                           >
                             <div className={cn('flex flex-wrap items-center gap-2 text-sm uppercase tracking-[0.16em] text-[hsl(var(--muted))]', alignRight ? 'justify-end' : 'justify-start')}>
@@ -1311,7 +1311,7 @@ function OverlayView() {
                         </article>
                       );
                     }) : (
-                      <div className="rounded-[1.35rem] border border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.7)] px-4 py-4 text-base text-[hsl(var(--muted))]">The stream is live, but no spoken turn has arrived yet.</div>
+                      <div className="rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface))] px-4 py-4 text-base text-[hsl(var(--muted))]">The stream is live, but no spoken turn has arrived yet.</div>
                     )}
                   </div>
                 </div>
@@ -1320,17 +1320,17 @@ function OverlayView() {
 
             <Surface className="p-5">
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-[1.5rem] border border-[hsl(var(--border))] bg-black/10 p-4">
+                <div className="rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-4">
                   <p className="font-monoish text-sm uppercase tracking-[0.24em] text-[hsl(var(--cyan))]">Current phase</p>
                   <p className="mt-2 text-xl font-semibold text-[hsl(var(--text))]">{session.phase}</p>
                   <p className="mt-2 text-base leading-7 text-[hsl(var(--muted))]">Runtime {runtime} · {session.status}</p>
                 </div>
-                <div className="rounded-[1.5rem] border border-[hsl(var(--border))] bg-black/10 p-4">
+                <div className="rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-4">
                   <p className="font-monoish text-sm uppercase tracking-[0.24em] text-[hsl(var(--gold))]">Evidence</p>
                   <p className="mt-2 text-xl font-semibold text-[hsl(var(--text))]">{session.metadata.evidenceCards.length} cards</p>
                   <p className="mt-2 line-clamp-2 text-base leading-7 text-[hsl(var(--muted))]">{latestEvidenceLabel(session)}</p>
                 </div>
-                <div className="rounded-[1.5rem] border border-[hsl(var(--border))] bg-black/10 p-4">
+                <div className="rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-4">
                   <p className="font-monoish text-sm uppercase tracking-[0.24em] text-[hsl(var(--purple))]">Objections</p>
                   <p className="mt-2 text-xl font-semibold text-[hsl(var(--text))]">{String(session.metadata.objectionCount ?? 0)}</p>
                   <p className="mt-2 text-base leading-7 text-[hsl(var(--muted))]">{prettyLabel(latestDirectiveLabel(session))}</p>
@@ -1356,13 +1356,13 @@ function OverlayView() {
                 </div>
               </div>
 
-              <div className="mt-5 min-h-[420px] rounded-[1.75rem] border border-[hsl(var(--border))] bg-black/15 p-5 motion-safe:transition-opacity motion-safe:duration-500 motion-reduce:transition-none">
+              <div className="mt-5 min-h-[420px] rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-5 motion-safe:transition-opacity motion-safe:duration-300 motion-reduce:transition-none">
                 <p className="font-monoish text-sm uppercase tracking-[0.24em] text-[hsl(var(--cyan))]">{activeCard?.eyebrow}</p>
                 <h3 className="mt-2 text-2xl font-semibold text-[hsl(var(--text))]">{activeCard?.title}</h3>
                 <p className="mt-3 text-base leading-7 text-[hsl(var(--muted))]">{activeCard?.summary}</p>
                 <div className="mt-5 space-y-2">
                   {activeCard?.details.map((detail) => (
-                    <div key={detail} className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.7)] px-3 py-2 text-base text-[hsl(var(--text))]">
+                    <div key={detail} className="rounded-lg border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface))] px-3 py-2 text-base text-[hsl(var(--text))]">
                       {detail}
                     </div>
                   ))}
@@ -1403,7 +1403,7 @@ function OverlayView() {
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {jurors.map((juror) => (
-                  <article key={juror.id} className="rounded-[1.35rem] border border-[hsl(var(--border))] bg-black/10 p-4">
+                  <article key={juror.id} className="rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-4">
                     <p className="font-monoish text-sm uppercase tracking-[0.18em] text-[hsl(var(--gold))]">{juror.label}</p>
                     <p className="mt-2 text-base font-semibold text-[hsl(var(--text))]">{juror.name}</p>
                     <p className="mt-2 text-sm uppercase tracking-[0.18em] text-[hsl(var(--gold))]">{juror.role}</p>
@@ -1414,6 +1414,7 @@ function OverlayView() {
             </Surface>
           </aside>
         </main>
+      </div>
       </div>
     </div>
   );

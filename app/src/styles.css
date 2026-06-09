@@ -1,19 +1,22 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --bg: 210 42% 7%;
-  --surface: 212 38% 10%;
-  --surface-2: 212 34% 14%;
-  --border: 205 28% 23%;
-  --text: 205 40% 92%;
-  --muted: 207 18% 64%;
-  --cyan: 190 92% 58%;
-  --purple: 260 75% 62%;
-  --red: 3 89% 59%;
-  --gold: 38 68% 60%;
-  --green: 145 64% 50%;
+  --bg: 240 10% 4%;          /* #09090B */
+  --surface: 240 6% 10%;     /* #18181B */
+  --surface-2: 240 5% 16%;   /* #27272A */
+  --border: 240 4% 28%;      /* #3F3F46 */
+  --text: 0 0% 98%;          /* #FAFAFA */
+  --muted: 240 5% 65%;       /* #A1A1AA */
+  --cyan: 239 84% 67%;       /* #6366F1 info/accent-secondary */
+  --purple: 271 91% 60%;     /* #A855F7 accent-primary */
+  --red: 347 77% 54%;        /* #F43F5E error */
+  --gold: 38 92% 50%;        /* #F59E0B warning */
+  --green: 174 80% 40%;      /* #14B8A6 success, not terminal green */
+  --shadow: 0 0% 0%;
   color-scheme: dark;
 }
 
@@ -27,15 +30,11 @@ body {
   margin: 0;
   position: relative;
   overflow-x: hidden;
-  background:
-    radial-gradient(circle at 15% 10%, hsl(var(--purple) / 0.14), transparent 30%),
-    radial-gradient(circle at 85% 0%, hsl(var(--cyan) / 0.12), transparent 24%),
-    radial-gradient(circle at 75% 80%, hsl(var(--gold) / 0.08), transparent 28%),
-    linear-gradient(180deg, hsl(var(--bg)) 0%, hsl(211 41% 5%) 100%);
+  background: hsl(var(--bg));
   color: hsl(var(--text));
   font-family:
+    'Space Grotesk',
     'Inter',
-    'Segoe UI',
     system-ui,
     -apple-system,
     BlinkMacSystemFont,
@@ -47,10 +46,8 @@ body::before {
   pointer-events: none;
   position: fixed;
   inset: 0;
-  background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-  background-size: 100% 5px;
-  mix-blend-mode: soft-light;
-  opacity: 0.1;
+  border: 24px solid hsl(var(--border) / 0.14);
+  opacity: 0.5;
 }
 
 ::selection {
@@ -74,6 +71,22 @@ h4,
 
 .font-monoish {
   font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+}
+
+.overlay-safe {
+  padding-top: max(1.5rem, env(safe-area-inset-top));
+  padding-right: max(1.5rem, env(safe-area-inset-right));
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  padding-left: max(1.5rem, env(safe-area-inset-left));
+}
+
+@media (min-width: 1280px) {
+  .overlay-safe {
+    padding-top: max(2rem, env(safe-area-inset-top));
+    padding-right: max(2rem, env(safe-area-inset-right));
+    padding-bottom: max(2rem, env(safe-area-inset-bottom));
+    padding-left: max(2rem, env(safe-area-inset-left));
+  }
 }
 
 * {

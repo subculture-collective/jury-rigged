@@ -7,7 +7,7 @@ export function cn(...parts: Array<string | false | null | undefined>) {
 
 export function Surface({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <div className={cn('rounded-3xl border border-[hsl(var(--border)/0.85)] bg-[hsl(var(--surface)/0.78)] shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl', className)}>
+    <div className={cn('rounded-2xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface))] shadow-[8px_8px_0_hsl(var(--shadow))]', className)}>
       {children}
     </div>
   );
@@ -27,8 +27,8 @@ export function SectionLabel({ eyebrow, title, note }: { eyebrow: string; title:
 
 export function LivePill({ text = 'LIVE' }: { text?: string }) {
   return (
-    <span className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--red)/0.45)] bg-[hsl(var(--red)/0.12)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.32em] text-[hsl(var(--text))]">
-      <span className="size-2 rounded-full bg-[hsl(var(--red))] shadow-[0_0_0_6px_hsl(var(--red)/0.14)] motion-safe:animate-pulse" aria-hidden="true" />
+    <span className="inline-flex items-center gap-2 rounded-md border-2 border-[hsl(var(--red))] bg-[hsl(var(--surface-2))] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.32em] text-[hsl(var(--text))]">
+      <span className="size-2 rounded-full bg-[hsl(var(--red))] motion-safe:animate-pulse" aria-hidden="true" />
       {text}
     </span>
   );
@@ -70,7 +70,7 @@ export function TabButton({
       className={cn(
         'group rounded-2xl border px-3 py-2 text-left transition duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cyan))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--bg))]',
         active
-          ? 'border-[hsl(var(--cyan)/0.55)] bg-[hsl(var(--surface-2))] shadow-[0_0_0_1px_hsl(var(--cyan)/0.18),0_14px_30px_rgba(0,0,0,0.2)]'
+          ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--surface-2))] shadow-[4px_4px_0_hsl(var(--shadow))]'
           : 'border-[hsl(var(--border))] bg-black/10 hover:border-[hsl(var(--border)/1)] hover:bg-[hsl(var(--surface-2)/0.68)]',
       )}
       aria-selected={active}
@@ -106,7 +106,7 @@ export function TranscriptLog({ items }: { items: TranscriptItem[] }) {
         {items.map((item) => (
           <article
             key={`${item.time}-${item.speaker}`}
-            className={cn('rounded-2xl border border-l-4 border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.82)] p-4 transition hover:border-[hsl(var(--cyan)/0.35)]', toneClass[item.tone])}
+            className={cn('border-l-4 border-t border-t-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-4 py-3 transition hover:border-t-[hsl(var(--cyan))]', toneClass[item.tone])}
           >
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="font-monoish text-[hsl(var(--cyan))]">{item.time}</span>
@@ -133,7 +133,7 @@ export function PhaseRail({ phases }: { phases: Array<{ step: string; note: stri
                 className={cn(
                   'mt-1 size-3 rounded-full border',
                   phase.state === 'active'
-                    ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--cyan))] shadow-[0_0_0_6px_hsl(var(--cyan)/0.14)]'
+                    ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--cyan))]'
                     : phase.state === 'complete'
                       ? 'border-[hsl(var(--green))] bg-[hsl(var(--green))]'
                       : 'border-[hsl(var(--border))] bg-[hsl(var(--surface-2))]',
@@ -218,7 +218,7 @@ export function CaseCard({ item, active, onClick }: { item: CaseItem; active: bo
       className={cn(
         'w-full rounded-3xl border p-4 text-left transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cyan))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--bg))]',
         active
-          ? 'border-[hsl(var(--cyan)/0.55)] bg-[hsl(var(--surface-2))] shadow-[0_0_0_1px_hsl(var(--cyan)/0.12)]'
+          ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--surface-2))] shadow-[4px_4px_0_hsl(var(--shadow))]'
           : 'border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.7)] hover:border-[hsl(var(--border)/1)] hover:bg-[hsl(var(--surface-2)/0.84)]',
       )}
     >
