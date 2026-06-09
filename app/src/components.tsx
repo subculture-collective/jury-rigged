@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import type { CaseItem, JuryMember, TranscriptItem, VoteOption } from './data';
 
 export function cn(...parts: Array<string | false | null | undefined>) {
@@ -7,7 +7,7 @@ export function cn(...parts: Array<string | false | null | undefined>) {
 
 export function Surface({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <div className={cn('rounded-2xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface))] shadow-[8px_8px_0_hsl(var(--shadow))]', className)}>
+    <div className={cn('rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface))] shadow-[8px_8px_0_hsl(var(--shadow))]', className)}>
       {children}
     </div>
   );
@@ -17,7 +17,7 @@ export function SectionLabel({ eyebrow, title, note }: { eyebrow: string; title:
   return (
     <div className="flex items-end justify-between gap-4">
       <div>
-        <p className="font-monoish text-[10px] uppercase tracking-[0.36em] text-[hsl(var(--cyan))]">{eyebrow}</p>
+        <p className="font-monoish text-xs uppercase tracking-[0.28em] text-[hsl(var(--cyan))]">{eyebrow}</p>
         <h2 className="mt-2 text-lg font-semibold text-[hsl(var(--text))] md:text-xl">{title}</h2>
       </div>
       {note ? <p className="max-w-md text-right text-xs text-[hsl(var(--muted))]">{note}</p> : null}
@@ -27,7 +27,7 @@ export function SectionLabel({ eyebrow, title, note }: { eyebrow: string; title:
 
 export function LivePill({ text = 'LIVE' }: { text?: string }) {
   return (
-    <span className="inline-flex items-center gap-2 rounded-md border-2 border-[hsl(var(--red))] bg-[hsl(var(--surface-2))] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.32em] text-[hsl(var(--text))]">
+    <span className="inline-flex items-center gap-2 rounded-md border-2 border-[hsl(var(--red))] bg-[hsl(var(--surface-2))] px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-[hsl(var(--text))]">
       <span className="size-2 rounded-full bg-[hsl(var(--red))] motion-safe:animate-pulse" aria-hidden="true" />
       {text}
     </span>
@@ -44,8 +44,8 @@ export function StatChip({ label, value, tone = 'cyan' }: { label: string; value
   } as const;
 
   return (
-    <div className="rounded-2xl border border-[hsl(var(--border))] bg-black/10 px-3 py-2">
-      <p className="text-[10px] uppercase tracking-[0.28em] text-[hsl(var(--muted))]">{label}</p>
+    <div className="rounded-lg border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-3 py-2">
+      <p className="text-xs uppercase tracking-[0.22em] text-[hsl(var(--muted))]">{label}</p>
       <p className={cn('mt-1 font-monoish text-sm font-semibold', toneMap[tone])}>{value}</p>
     </div>
   );
@@ -56,27 +56,37 @@ export function TabButton({
   label,
   note,
   onClick,
+  controls,
+  id,
+  onKeyDown,
 }: {
   active: boolean;
   label: string;
   note: string;
   onClick: () => void;
+  controls?: string;
+  id?: string;
+  onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void;
 }) {
   return (
     <button
       type="button"
       role="tab"
+      id={id}
+      aria-selected={active}
+      aria-controls={controls}
+      tabIndex={active ? 0 : -1}
       onClick={onClick}
+      onKeyDown={onKeyDown}
       className={cn(
-        'group rounded-2xl border px-3 py-2 text-left transition duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cyan))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--bg))]',
+        'group rounded-lg border-2 px-3 py-2 text-left transition duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cyan))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--bg))]',
         active
           ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--surface-2))] shadow-[4px_4px_0_hsl(var(--shadow))]'
-          : 'border-[hsl(var(--border))] bg-black/10 hover:border-[hsl(var(--border)/1)] hover:bg-[hsl(var(--surface-2)/0.68)]',
+          : 'border-[hsl(var(--border))] bg-[hsl(var(--surface))] hover:border-[hsl(var(--cyan))] hover:bg-[hsl(var(--surface-2))]',
       )}
-      aria-selected={active}
     >
-      <p className="text-sm font-semibold text-[hsl(var(--text))]">{label}</p>
-      <p className="mt-1 text-[11px] leading-tight text-[hsl(var(--muted))]">{note}</p>
+      <p className="text-base font-semibold text-[hsl(var(--text))]">{label}</p>
+      <p className="mt-1 text-xs leading-tight text-[hsl(var(--muted))]">{note}</p>
     </button>
   );
 }
@@ -96,24 +106,18 @@ export function TranscriptLog({ items }: { items: TranscriptItem[] }) {
         title="Text-first courtroom feed"
         note="Readable even without audio. Latest entries are announced politely for assistive tech."
       />
-      <div
-        role="log"
-        aria-live="polite"
-        aria-relevant="additions text"
-        aria-atomic="false"
-        className="max-h-[720px] space-y-3 overflow-auto pr-1"
-      >
+      <div role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false" className="max-h-[720px] space-y-3 overflow-auto pr-1">
         {items.map((item) => (
           <article
             key={`${item.time}-${item.speaker}`}
-            className={cn('border-l-4 border-t border-t-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-4 py-3 transition hover:border-t-[hsl(var(--cyan))]', toneClass[item.tone])}
+            className={cn('border-l-4 px-4 py-3 transition hover:bg-[hsl(var(--surface-2))]', toneClass[item.tone])}
           >
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="font-monoish text-[hsl(var(--cyan))]">{item.time}</span>
               <span className="rounded-full border border-[hsl(var(--border))] px-2 py-0.5 text-[hsl(var(--muted))]">{item.role}</span>
               <span className="font-semibold text-[hsl(var(--text))]">{item.speaker}</span>
             </div>
-            <p className="mt-2 text-sm leading-6 text-[hsl(var(--text))]">{item.text}</p>
+            <p className="mt-2 text-base leading-7 text-[hsl(var(--text))]">{item.text}</p>
           </article>
         ))}
       </div>
@@ -145,7 +149,7 @@ export function PhaseRail({ phases }: { phases: Array<{ step: string; note: stri
             <div className="pb-5">
               <p className="text-sm font-semibold text-[hsl(var(--text))]">{phase.step}</p>
               <p className="mt-1 text-sm text-[hsl(var(--muted))]">{phase.note}</p>
-              <p className="mt-2 font-monoish text-[10px] uppercase tracking-[0.28em] text-[hsl(var(--muted))]">{phase.state}</p>
+              <p className="mt-2 font-monoish text-xs uppercase tracking-[0.22em] text-[hsl(var(--muted))]">{phase.state}</p>
             </div>
           </div>
         ))}
@@ -171,7 +175,7 @@ export function JuryGrid({ jurors }: { jurors: JuryMember[] }) {
           <div
             key={juror.id}
             role="group"
-            className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-3"
+            className="rounded-lg border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-3"
             aria-label={`${juror.label} ${juror.status} ${juror.note}`}
           >
             <div className="flex items-center gap-3">
@@ -193,16 +197,16 @@ export function EvidenceList({ items, compact = false }: { items: Array<{ id: st
       <SectionLabel eyebrow="Evidence" title="Admissible materials" note="Cards stay short and scannable; the useful detail is always the first line." />
       <div className={cn('mt-5 space-y-3', compact && 'space-y-2')}>
         {items.map((item) => (
-          <article key={item.id} className={cn('rounded-2xl border border-[hsl(var(--border))] bg-black/10 p-4', compact && 'p-3')}>
+          <article key={item.id} className={cn('rounded-lg border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-4', compact && 'p-3')}>
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold text-[hsl(var(--text))]">{item.label}</p>
                 <p className="mt-1 text-xs text-[hsl(var(--muted))]">{item.type} · {item.source}</p>
               </div>
-              <span className="rounded-full border border-[hsl(var(--border))] px-2 py-1 text-[10px] uppercase tracking-[0.22em] text-[hsl(var(--gold))]">{item.badge}</span>
+              <span className="rounded-md border-2 border-[hsl(var(--border))] px-2 py-1 text-xs uppercase tracking-[0.18em] text-[hsl(var(--gold))]">{item.badge}</span>
             </div>
             <p className="mt-3 text-sm leading-6 text-[hsl(var(--text))]">{item.summary}</p>
-            <p className="mt-3 font-monoish text-[10px] uppercase tracking-[0.26em] text-[hsl(var(--muted))]">{item.confidence}</p>
+            <p className="mt-3 font-monoish text-xs uppercase tracking-[0.2em] text-[hsl(var(--muted))]">{item.confidence}</p>
           </article>
         ))}
       </div>
@@ -216,7 +220,7 @@ export function CaseCard({ item, active, onClick }: { item: CaseItem; active: bo
       type="button"
       onClick={onClick}
       className={cn(
-        'w-full rounded-3xl border p-4 text-left transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cyan))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--bg))]',
+        'w-full rounded-xl border-2 p-4 text-left transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cyan))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--bg))]',
         active
           ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--surface-2))] shadow-[4px_4px_0_hsl(var(--shadow))]'
           : 'border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.7)] hover:border-[hsl(var(--border)/1)] hover:bg-[hsl(var(--surface-2)/0.84)]',
@@ -224,15 +228,15 @@ export function CaseCard({ item, active, onClick }: { item: CaseItem; active: bo
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-monoish text-[10px] uppercase tracking-[0.32em] text-[hsl(var(--cyan))]">{item.docket}</p>
+          <p className="font-monoish text-xs uppercase tracking-[0.24em] text-[hsl(var(--cyan))]">{item.docket}</p>
           <h3 className="mt-2 text-lg font-semibold text-[hsl(var(--text))]">{item.title}</h3>
         </div>
-        <span className="rounded-full border border-[hsl(var(--border))] px-2 py-1 text-[10px] uppercase tracking-[0.22em] text-[hsl(var(--muted))]">{item.risk}</span>
+        <span className="rounded-md border-2 border-[hsl(var(--border))] px-2 py-1 text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted))]">{item.risk}</span>
       </div>
       <p className="mt-3 text-sm text-[hsl(var(--muted))]">{item.summary}</p>
       <div className="mt-4 flex flex-wrap gap-2">
         {item.tags.map((tag) => (
-          <span key={tag} className="rounded-full border border-[hsl(var(--border))] bg-black/10 px-2 py-1 text-[10px] uppercase tracking-[0.22em] text-[hsl(var(--text))]">{tag}</span>
+          <span key={tag} className="rounded-md border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-2 py-1 text-xs uppercase tracking-[0.18em] text-[hsl(var(--text))]">{tag}</span>
         ))}
       </div>
     </button>
@@ -245,16 +249,16 @@ export function VoteCard({ option }: { option: VoteOption }) {
       type="button"
       disabled={option.disabled}
       className={cn(
-        'w-full rounded-3xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cyan))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--bg))]',
+        'w-full rounded-xl border-2 p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cyan))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--bg))]',
         option.disabled
-          ? 'cursor-not-allowed border-[hsl(var(--border))] bg-black/5 opacity-70'
+          ? 'cursor-not-allowed border-[hsl(var(--border))] bg-[hsl(var(--surface))] opacity-70'
           : 'border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.72)] hover:border-[hsl(var(--cyan)/0.35)] hover:bg-[hsl(var(--surface-2)/0.9)]',
       )}
       aria-describedby={`${option.label.replace(/\s+/g, '-').toLowerCase()}-reason`}
     >
       <div className="flex items-center justify-between gap-4">
         <p className="text-sm font-semibold text-[hsl(var(--text))]">{option.label}</p>
-        <span className={cn('rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.22em]', option.disabled ? 'border-[hsl(var(--red)/0.45)] text-[hsl(var(--red))]' : 'border-[hsl(var(--green)/0.45)] text-[hsl(var(--green))]')}>
+        <span className={cn('rounded-md border-2 px-2 py-1 text-xs uppercase tracking-[0.18em]', option.disabled ? 'border-[hsl(var(--red))] text-[hsl(var(--red))]' : 'border-[hsl(var(--green))] text-[hsl(var(--green))]')}>
           {option.disabled ? 'Unavailable' : 'Available'}
         </span>
       </div>
@@ -268,8 +272,8 @@ export function VoteCard({ option }: { option: VoteOption }) {
 
 export function HealthCard({ label, value, note }: { label: string; value: string; note: string }) {
   return (
-    <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-4">
-      <p className="text-[10px] uppercase tracking-[0.28em] text-[hsl(var(--muted))]">{label}</p>
+    <div className="rounded-lg border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-4">
+      <p className="text-xs uppercase tracking-[0.22em] text-[hsl(var(--muted))]">{label}</p>
       <p className="mt-2 font-monoish text-lg font-semibold text-[hsl(var(--text))]">{value}</p>
       <p className="mt-2 text-sm text-[hsl(var(--muted))]">{note}</p>
     </div>

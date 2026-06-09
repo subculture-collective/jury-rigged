@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import {
   cases,
   detailTabs,
@@ -127,15 +127,6 @@ type PublicQueueSubmission = {
   estimatedStartMinutes?: number;
 };
 
-type SidebarCard = {
-  id: string;
-  eyebrow: string;
-  title: string;
-  summary: string;
-  details: string[];
-  footer?: string;
-};
-
 type LiveOverlayEvent = {
   type: string;
   payload?: unknown;
@@ -180,7 +171,6 @@ declare global {
 
 const VIEW_PARAM = 'view';
 const OVERLAY_DISCOVERY_MS = 5_000;
-const OVERLAY_ROTATION_MS = 7_000;
 const OVERLAY_TRANSCRIPT_LIMIT = 120;
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined;
 
@@ -674,26 +664,6 @@ function useNowTick(intervalMs: number) {
   return now;
 }
 
-function usePrefersReducedMotion() {
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-
-  useEffect(() => {
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const update = () => setPrefersReducedMotion(media.matches);
-    update();
-
-    if (typeof media.addEventListener === 'function') {
-      media.addEventListener('change', update);
-      return () => media.removeEventListener('change', update);
-    }
-
-    media.addListener(update);
-    return () => media.removeListener(update);
-  }, []);
-
-  return prefersReducedMotion;
-}
-
 function useLiveOverlaySession() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [session, setSession] = useState<LiveSession | null>(null);
@@ -885,80 +855,6 @@ function useTwitchSocial(lastEvent?: LiveOverlayEvent | null) {
   return { social, error };
 }
 
-function buildSidebarCards(session: LiveSession, now: number): SidebarCard[] {
-  const verdictVotes = sumRecord(session.metadata.verdictVotes);
-  const sentenceVotes = sumRecord(session.metadata.sentenceVotes);
-  const pressVotes = sumRecord(session.metadata.pressVotes);
-  const presentVotes = sumRecord(session.metadata.presentVotes);
-  const evidenceCount = session.metadata.evidenceCards.length;
-  const witnessSummary = session.metadata.roleAssignments.witnesses.length
-    ? session.metadata.roleAssignments.witnesses.map(prettyLabel).join(' · ')
-    : 'No witness roles assigned';
-  const directive = session.metadata.lastRenderDirective;
-
-  return [
-    {
-      id: 'session',
-      eyebrow: 'Live posture',
-      title: session.topic,
-      summary: `${session.phase} · ${session.status.toUpperCase()} · ${formatDuration(session.startedAt ?? session.createdAt, now)}`,
-      details: [
-        `${session.turnCount} turns on record`,
-        `${session.turns.length} transcript lines loaded`,
-        `${session.metadata.caseType} case · ${session.metadata.casePrompt}`,
-      ],
-      footer: session.metadata.currentGenre ? `Genre: ${session.metadata.currentGenre}` : 'Live capture only — no archived demo state.',
-    },
-    {
-      id: 'cast',
-      eyebrow: 'Cast board',
-      title: 'Active roles',
-      summary: 'Current courtroom assignments attached to the live session.',
-      details: [
-        `Judge · ${prettyLabel(session.metadata.roleAssignments.judge)}`,
-        `Prosecution · ${prettyLabel(session.metadata.roleAssignments.prosecutor)}`,
-        `Defense · ${prettyLabel(session.metadata.roleAssignments.defense)}`,
-        `Bailiff · ${prettyLabel(session.metadata.roleAssignments.bailiff)}`,
-        `Witnesses · ${witnessSummary}`,
-      ],
-      footer: `${session.participants?.length ?? 0} participants connected`,
-    },
-    {
-      id: 'votes',
-      eyebrow: 'Vote pulse',
-      title: 'Live tallies',
-      summary: 'Aggregated signal from the active ballot channels.',
-      details: [
-        `Verdict votes · ${verdictVotes}`,
-        `Sentence votes · ${sentenceVotes}`,
-        `Press actions · ${pressVotes}`,
-        `Present actions · ${presentVotes}`,
-      ],
-      footer: evidenceCount > 0 ? `${evidenceCount} evidence cards available` : 'No evidence cards published yet.',
-    },
-    {
-      id: 'notes',
-      eyebrow: 'Session notes',
-      title: 'Operational context',
-      summary: 'Small live cues for the broadcast operator without cluttering the frame.',
-      details: [
-        session.metadata.objectionCount !== undefined
-          ? `Objections tracked · ${session.metadata.objectionCount}`
-          : 'Objection counter not yet emitted',
-        session.metadata.recapTurnIds.length
-          ? `${session.metadata.recapTurnIds.length} recap turns pinned`
-          : 'No recap turns pinned',
-        directive && isRecord(directive.directive)
-          ? `Directive · ${readString(directive.directive.effect) ?? 'update'}`
-          : 'No render directive active',
-      ],
-      footer: session.metadata.finalRuling
-        ? `Final ruling · ${session.metadata.finalRuling.verdict}`
-        : `Last sync ${new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
-    },
-  ];
-}
-
 function App() {
   const [activeView, setActiveView] = useState<ViewKey>(getInitialView);
   const [selectedCaseId, setSelectedCaseId] = useState(cases[0].id);
@@ -967,11 +863,28 @@ function App() {
     () => cases.find((item) => item.id === selectedCaseId) ?? cases[0],
     [selectedCaseId],
   );
+  const navigableViews = useMemo(() => views.filter(view => view.key !== 'overlay'), []);
 
   const setView = useCallback((view: ViewKey) => {
     setActiveView(view);
     syncViewToUrl(view);
   }, []);
+
+  const handleViewKeyDown = useCallback((event: KeyboardEvent<HTMLButtonElement>, currentView: ViewKey) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft' && event.key !== 'Home' && event.key !== 'End') return;
+    event.preventDefault();
+    const currentIndex = navigableViews.findIndex(view => view.key === currentView);
+    const lastIndex = navigableViews.length - 1;
+    const nextIndex =
+      event.key === 'Home' ? 0 :
+      event.key === 'End' ? lastIndex :
+      event.key === 'ArrowRight' ? (currentIndex + 1) % navigableViews.length :
+      (currentIndex - 1 + navigableViews.length) % navigableViews.length;
+    const nextView = navigableViews[nextIndex];
+    if (!nextView) return;
+    setView(nextView.key);
+    window.setTimeout(() => document.getElementById(`view-tab-${nextView.key}`)?.focus(), 0);
+  }, [navigableViews, setView]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -987,21 +900,21 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[hsl(var(--bg))] text-[hsl(var(--text))]">
-      <div className="mx-auto flex min-h-screen max-w-[1680px] flex-col gap-5 px-4 py-4 lg:px-6">
-        <header className="rounded-2xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface))] px-4 py-4 shadow-[8px_8px_0_hsl(var(--shadow))] lg:px-6">
+    <div className="grid min-h-screen place-items-center overflow-hidden bg-[hsl(var(--bg))] text-[hsl(var(--text))]">
+      <div className="overlay-safe flex aspect-video w-screen max-w-[calc(100vh*16/9)] flex-col gap-5 overflow-auto border-2 border-[hsl(var(--border)/0.45)]">
+        <header className="rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface))] px-4 py-4 shadow-[8px_8px_0_hsl(var(--shadow))] lg:px-6">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-3">
                 <div>
-                  <p className="font-monoish text-[10px] uppercase tracking-[0.38em] text-[hsl(var(--cyan))]">JuryRigged</p>
+                  <p className="font-monoish text-xs uppercase tracking-[0.28em] text-[hsl(var(--cyan))]">JuryRigged</p>
                   <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[hsl(var(--text))] md:text-3xl">Dark courtroom broadcast UI</h1>
                 </div>
                 <LivePill />
-                <span className="rounded-full border border-[hsl(var(--border))] bg-black/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-[hsl(var(--muted))]">{liveMeta.mode}</span>
+                <span className="rounded-md border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[hsl(var(--muted))]">{liveMeta.mode}</span>
                 <a
                   href="/operator"
-                  className="rounded-full border border-[hsl(var(--cyan)/0.45)] bg-[hsl(var(--cyan)/0.12)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[hsl(var(--cyan))] transition hover:border-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.18)]"
+                  className="rounded-md border-2 border-[hsl(var(--cyan))] bg-[hsl(var(--surface-2))] px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-[hsl(var(--cyan))] transition hover:bg-[hsl(var(--surface))]"
                 >
                   Admin console
                 </a>
@@ -1020,12 +933,15 @@ function App() {
           </div>
 
           <nav className="mt-5 grid gap-2 md:grid-cols-2 xl:grid-cols-4" aria-label="View navigation" role="tablist">
-            {views.filter(view => view.key !== 'overlay').map((view) => (
+            {navigableViews.map((view) => (
               <TabButton
                 key={view.key}
                 active={activeView === view.key}
                 label={view.label}
                 note={view.note}
+                id={`view-tab-${view.key}`}
+                controls={`view-panel-${view.key}`}
+                onKeyDown={(event) => handleViewKeyDown(event, view.key)}
                 onClick={() => setView(view.key)}
               />
             ))}
@@ -1033,13 +949,27 @@ function App() {
         </header>
 
         <main className="flex-1">
-          {activeView === 'viewer' ? <ViewerView selectedCase={selectedCase} onSelectCase={setSelectedCaseId} /> : null}
-          {activeView === 'directory' ? <DirectoryView selectedCaseId={selectedCaseId} onSelectCase={setSelectedCaseId} /> : null}
-          {activeView === 'details' ? <DetailsView selectedCase={selectedCase} onSelectCase={setSelectedCaseId} /> : null}
-          {activeView === 'prompt' ? <PromptQueueView /> : null}
-          {activeView === 'transcripts' ? <TranscriptSearchView /> : null}
-          {activeView === 'voting' ? <VotingView selectedCase={selectedCase} /> : null}
-          {activeView === 'about' ? <AboutView /> : null}
+          <section id="view-panel-viewer" role="tabpanel" aria-labelledby="view-tab-viewer" hidden={activeView !== 'viewer'}>
+            <ViewerView selectedCase={selectedCase} onSelectCase={setSelectedCaseId} />
+          </section>
+          <section id="view-panel-directory" role="tabpanel" aria-labelledby="view-tab-directory" hidden={activeView !== 'directory'}>
+            <DirectoryView selectedCaseId={selectedCaseId} onSelectCase={setSelectedCaseId} />
+          </section>
+          <section id="view-panel-details" role="tabpanel" aria-labelledby="view-tab-details" hidden={activeView !== 'details'}>
+            <DetailsView selectedCase={selectedCase} onSelectCase={setSelectedCaseId} />
+          </section>
+          <section id="view-panel-prompt" role="tabpanel" aria-labelledby="view-tab-prompt" hidden={activeView !== 'prompt'}>
+            <PromptQueueView />
+          </section>
+          <section id="view-panel-transcripts" role="tabpanel" aria-labelledby="view-tab-transcripts" hidden={activeView !== 'transcripts'}>
+            <TranscriptSearchView />
+          </section>
+          <section id="view-panel-voting" role="tabpanel" aria-labelledby="view-tab-voting" hidden={activeView !== 'voting'}>
+            <VotingView selectedCase={selectedCase} />
+          </section>
+          <section id="view-panel-about" role="tabpanel" aria-labelledby="view-tab-about" hidden={activeView !== 'about'}>
+            <AboutView />
+          </section>
         </main>
       </div>
     </div>
@@ -1064,13 +994,13 @@ function ViewerView({ selectedCase, onSelectCase }: { selectedCase: (typeof case
                 type="button"
                 onClick={() => onSelectCase(item.id)}
                 className={cn(
-                  'rounded-2xl border px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cyan))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--bg))]',
+                  'rounded-lg border-2 px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cyan))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--bg))]',
                   item.id === selectedCase.id
                     ? 'border-[hsl(var(--cyan)/0.55)] bg-[hsl(var(--surface-2))]'
-                    : 'border-[hsl(var(--border))] bg-black/10 hover:border-[hsl(var(--border)/1)]',
+                    : 'border-[hsl(var(--border))] bg-[hsl(var(--surface))] hover:border-[hsl(var(--cyan))]',
                 )}
               >
-                <p className="font-monoish text-[10px] uppercase tracking-[0.28em] text-[hsl(var(--cyan))]">{item.docket}</p>
+                <p className="font-monoish text-xs uppercase tracking-[0.22em] text-[hsl(var(--cyan))]">{item.docket}</p>
                 <p className="mt-1 text-sm font-semibold text-[hsl(var(--text))]">{item.title}</p>
               </button>
             ))}
@@ -1104,21 +1034,21 @@ function CaseAutomationCard({ snapshot, error }: { snapshot: CaseQueueSnapshot |
         <span className="font-monoish text-[hsl(var(--cyan))]">!prompt &lt;case idea&gt;</span>. Submitted cases enter this queue and run before the next generated case.
       </p>
       <div className="mt-4 grid gap-2 text-xs uppercase tracking-[0.22em] text-[hsl(var(--muted))]">
-        <span className="rounded-2xl border border-[hsl(var(--border))] bg-black/10 px-3 py-2">
+        <span className="rounded-lg border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-3 py-2">
           Running · {running ? running.prompt : snapshot?.runningSessionId ? 'live court session' : 'generated fallback ready'}
         </span>
-        <span className="rounded-2xl border border-[hsl(var(--border))] bg-black/10 px-3 py-2">
+        <span className="rounded-lg border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-3 py-2">
           Queued submissions · {snapshot?.queuedCount ?? 0}
         </span>
       </div>
       <div className="mt-4 space-y-2">
         {queuedItems.length > 0 ? queuedItems.map((item, index) => (
-          <div key={item.id} className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-2)/0.75)] px-3 py-3">
-            <p className="font-monoish text-[10px] uppercase tracking-[0.28em] text-[hsl(var(--gold))]">#{index + 1} · {item.source}{item.submittedBy ? ` · ${item.submittedBy}` : ''}</p>
+          <div key={item.id} className="rounded-lg border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-3 py-3">
+            <p className="font-monoish text-xs uppercase tracking-[0.22em] text-[hsl(var(--gold))]">#{index + 1} · {item.source}{item.submittedBy ? ` · ${item.submittedBy}` : ''}</p>
             <p className="mt-1 line-clamp-3 text-sm leading-5 text-[hsl(var(--text))]">{item.prompt}</p>
           </div>
         )) : (
-          <p className="rounded-2xl border border-[hsl(var(--border))] bg-black/10 px-3 py-3 text-sm leading-5 text-[hsl(var(--muted))]">
+          <p className="rounded-lg border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-3 py-3 text-sm leading-5 text-[hsl(var(--muted))]">
             No submitted cases queued. The next empty slot defaults to an auto-generated case.
           </p>
         )}
@@ -1132,6 +1062,8 @@ function OverlayStandby({ loading, error }: { loading: boolean; error: string | 
   return (
     <div className="grid min-h-screen place-items-center overflow-hidden bg-[hsl(var(--bg))] text-[hsl(var(--text))]">
       <div className="relative aspect-video w-screen max-w-[calc(100vh*16/9)] overflow-hidden border-2 border-[hsl(var(--border)/0.45)]">
+      <div className="pointer-events-none absolute left-0 top-0 h-16 w-52 bg-[hsl(var(--surface-2))]" aria-hidden="true" />
+      <div className="pointer-events-none absolute bottom-0 right-0 h-24 w-80 bg-[hsl(var(--surface))]" aria-hidden="true" />
       <div className="overlay-safe relative flex h-full items-center justify-center">
         <div className="max-w-2xl rounded-2xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface))] px-8 py-10 text-center shadow-[8px_8px_0_hsl(var(--shadow))] sm:px-10">
           <LivePill text={loading ? 'CONNECTING' : 'STANDBY'} />
@@ -1140,8 +1072,8 @@ function OverlayStandby({ loading, error }: { loading: boolean; error: string | 
             This overlay only shows live session data. When the court goes on air, it will attach automatically and fill this frame with the active feed.
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-2 text-xs uppercase tracking-[0.24em] text-[hsl(var(--muted))]">
-            <span className="rounded-full border border-[hsl(var(--border))] bg-black/10 px-3 py-1">No demo session</span>
-            <span className="rounded-full border border-[hsl(var(--border))] bg-black/10 px-3 py-1">No archived fallback</span>
+            <span className="rounded-md border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-3 py-1">No demo session</span>
+            <span className="rounded-md border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-3 py-1">No archived fallback</span>
           </div>
           {error ? <p className="mt-5 text-xs uppercase tracking-[0.22em] text-[hsl(var(--gold))]">{error}</p> : null}
         </div>
@@ -1182,13 +1114,11 @@ function SocialSignalCard({
 
 function OverlayView() {
   const now = useNowTick(1000);
-  const reducedMotion = usePrefersReducedMotion();
   const { session, loading, connected, error, lastUpdatedAt, lastEvent } = useLiveOverlaySession();
   const { social, error: socialError } = useTwitchSocial(lastEvent);
-  const [activePanel, setActivePanel] = useState(0);
   const [stinger, setStinger] = useState<OverlayStinger | null>(null);
+  const { snapshot: queueSnapshot } = useCaseQueue();
 
-  const sidebarCards = useMemo(() => (session ? buildSidebarCards(session, now) : []), [session, now]);
   const transcriptTurns = useMemo(
     () => (session ? session.turns.slice(-OVERLAY_TRANSCRIPT_LIMIT).reverse() : []),
     [session],
@@ -1196,25 +1126,6 @@ function OverlayView() {
   const jurors = useMemo(() => (session ? buildJurors(session.id) : []), [session]);
   const runtime = session ? formatDuration(session.startedAt ?? session.createdAt, now) : '00:00:00';
   const liveStamp = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'syncing';
-
-  useEffect(() => {
-    if (sidebarCards.length === 0) {
-      setActivePanel(0);
-      return;
-    }
-
-    setActivePanel((current: number) => current % sidebarCards.length);
-  }, [sidebarCards.length]);
-
-  useEffect(() => {
-    if (reducedMotion || sidebarCards.length <= 1 || !session) return undefined;
-
-    const timer = window.setInterval(() => {
-      setActivePanel((current: number) => (current + 1) % sidebarCards.length);
-    }, OVERLAY_ROTATION_MS);
-
-    return () => window.clearInterval(timer);
-  }, [reducedMotion, sidebarCards.length, session]);
 
   useEffect(() => {
     if (!session) {
@@ -1234,11 +1145,14 @@ function OverlayView() {
     return <OverlayStandby loading={loading} error={error} />;
   }
 
-  const activeCard = sidebarCards[activePanel] ?? sidebarCards[0];
+  const queuedCount = queueSnapshot?.queuedCount ?? 0;
+  const activePromptSource = session.metadata.caseSource ? prettyLabel(session.metadata.caseSource) : 'Generated';
 
   return (
     <div className="grid min-h-screen place-items-center overflow-hidden bg-[hsl(var(--bg))] text-[hsl(var(--text))]">
       <div className="relative aspect-video w-screen max-w-[calc(100vh*16/9)] overflow-hidden border-2 border-[hsl(var(--border)/0.45)]">
+      <div className="pointer-events-none absolute left-0 top-0 h-20 w-72 bg-[hsl(var(--surface-2))]" aria-hidden="true" />
+      <div className="pointer-events-none absolute bottom-0 right-0 h-28 w-96 bg-[hsl(var(--surface))]" aria-hidden="true" />
       {stinger ? (
         <div
           className={cn(
@@ -1252,7 +1166,7 @@ function OverlayView() {
         </div>
       ) : null}
       <div className="overlay-safe relative flex h-full flex-col gap-4">
-        <header className="flex items-start justify-between gap-4 rounded-2xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface))] px-6 py-5 shadow-[8px_8px_0_hsl(var(--shadow))]">
+        <header className="flex items-start justify-between gap-4 rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface))] px-6 py-5 shadow-[8px_8px_0_hsl(var(--shadow))]">
           <div className="min-w-0 space-y-3">
             <div className="flex flex-wrap items-center gap-3">
               <p className="font-monoish text-sm uppercase tracking-[0.32em] text-[hsl(var(--cyan))]">JuryRigged · Live overlay</p>
@@ -1317,63 +1231,22 @@ function OverlayView() {
                 </div>
               </div>
             </Surface>
-
-            <Surface className="p-5">
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-4">
-                  <p className="font-monoish text-sm uppercase tracking-[0.24em] text-[hsl(var(--cyan))]">Current phase</p>
-                  <p className="mt-2 text-xl font-semibold text-[hsl(var(--text))]">{session.phase}</p>
-                  <p className="mt-2 text-base leading-7 text-[hsl(var(--muted))]">Runtime {runtime} · {session.status}</p>
-                </div>
-                <div className="rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-4">
-                  <p className="font-monoish text-sm uppercase tracking-[0.24em] text-[hsl(var(--gold))]">Evidence</p>
-                  <p className="mt-2 text-xl font-semibold text-[hsl(var(--text))]">{session.metadata.evidenceCards.length} cards</p>
-                  <p className="mt-2 line-clamp-2 text-base leading-7 text-[hsl(var(--muted))]">{latestEvidenceLabel(session)}</p>
-                </div>
-                <div className="rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-4">
-                  <p className="font-monoish text-sm uppercase tracking-[0.24em] text-[hsl(var(--purple))]">Objections</p>
-                  <p className="mt-2 text-xl font-semibold text-[hsl(var(--text))]">{String(session.metadata.objectionCount ?? 0)}</p>
-                  <p className="mt-2 text-base leading-7 text-[hsl(var(--muted))]">{prettyLabel(latestDirectiveLabel(session))}</p>
-                </div>
-              </div>
-            </Surface>
           </section>
 
           <aside className="flex min-h-0 flex-col gap-4">
-            <Surface className="flex min-h-[520px] flex-1 flex-col p-5">
+            <Surface className="p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="font-monoish text-sm uppercase tracking-[0.24em] text-[hsl(var(--gold))]">Sidebar rotation</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-[hsl(var(--text))]">Live information blocks</h2>
+                  <p className="font-monoish text-base uppercase tracking-[0.18em] text-[hsl(var(--gold))]">Queue signal</p>
+                  <h2 className="mt-2 text-3xl font-semibold text-[hsl(var(--text))]">Prompt pipeline</h2>
                 </div>
-                <div className="flex gap-1" aria-hidden="true">
-                  {sidebarCards.map((card, index) => (
-                    <span
-                      key={card.id}
-                      className={cn('size-2 rounded-full transition-colors', index === activePanel ? 'bg-[hsl(var(--cyan))]' : 'bg-[hsl(var(--border))]')}
-                    />
-                  ))}
-                </div>
+                <p className="font-monoish text-4xl font-semibold text-[hsl(var(--gold))]">{queuedCount}</p>
               </div>
-
-              <div className="mt-5 min-h-[420px] rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-5 motion-safe:transition-opacity motion-safe:duration-300 motion-reduce:transition-none">
-                <p className="font-monoish text-sm uppercase tracking-[0.24em] text-[hsl(var(--cyan))]">{activeCard?.eyebrow}</p>
-                <h3 className="mt-2 text-2xl font-semibold text-[hsl(var(--text))]">{activeCard?.title}</h3>
-                <p className="mt-3 text-base leading-7 text-[hsl(var(--muted))]">{activeCard?.summary}</p>
-                <div className="mt-5 space-y-2">
-                  {activeCard?.details.map((detail) => (
-                    <div key={detail} className="rounded-lg border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface))] px-3 py-2 text-base text-[hsl(var(--text))]">
-                      {detail}
-                    </div>
-                  ))}
-                </div>
-                {activeCard?.footer ? (
-                  <p className="mt-5 text-sm uppercase tracking-[0.22em] text-[hsl(var(--gold))]">{activeCard.footer}</p>
-                ) : null}
-              </div>
-
-              <p className="mt-3 text-sm leading-6 text-[hsl(var(--muted))]">
-                Auto-rotates every {OVERLAY_ROTATION_MS / 1000} seconds; reduced-motion users stay on the first block.
+              <p className="mt-4 text-lg leading-7 text-[hsl(var(--text))]">
+                Active source: <span className="text-[hsl(var(--cyan))]">{activePromptSource}</span>
+              </p>
+              <p className="mt-2 text-base leading-7 text-[hsl(var(--muted))]">
+                {queuedCount === 0 ? 'No public prompts waiting; generated cases can fill the next slot.' : `${queuedCount} public prompt${queuedCount === 1 ? '' : 's'} waiting behind the current case.`}
               </p>
             </Surface>
 
@@ -1433,7 +1306,7 @@ function DirectoryView({ selectedCaseId, onSelectCase }: { selectedCaseId: strin
       <div className="grid gap-5 xl:grid-cols-3">
         {groupedCases.map((group) => (
           <Surface key={group.title} className="p-4">
-            <p className="font-monoish text-[10px] uppercase tracking-[0.32em] text-[hsl(var(--cyan))]">{group.title}</p>
+            <p className="font-monoish text-sm uppercase tracking-[0.22em] text-[hsl(var(--cyan))]">{group.title}</p>
             <div className="mt-4 space-y-4">
               {group.items.map((item) => (
                 <CaseCard key={item.id} item={item} active={item.id === selectedCaseId} onClick={() => onSelectCase(item.id)} />
@@ -1592,7 +1465,7 @@ function PromptQueueView() {
           <div className="mt-5 space-y-3">
             {queuedItems.length ? queuedItems.map((item, index) => (
               <article key={item.id} className="rounded-2xl border border-[hsl(var(--border))] bg-black/10 p-4">
-                <p className="font-monoish text-[10px] uppercase tracking-[0.28em] text-[hsl(var(--cyan))]">#{index + 1} · {item.source.replace('_', ' ')}</p>
+                <p className="font-monoish text-sm uppercase tracking-[0.2em] text-[hsl(var(--cyan))]">#{index + 1} · {item.source.replace('_', ' ')}</p>
                 <p className="mt-2 line-clamp-3 text-sm leading-6 text-[hsl(var(--text))]">{item.prompt}</p>
                 <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[hsl(var(--gold))]">Approx. {item.estimatedStartMinutes ?? index * 12} min</p>
               </article>
@@ -1721,7 +1594,7 @@ function TranscriptSearchView() {
                 selectedTranscriptId === result.id ? 'border-[hsl(var(--cyan)/0.6)] bg-[hsl(var(--surface-2))]' : 'border-[hsl(var(--border))] bg-black/10 hover:border-[hsl(var(--cyan)/0.45)]',
               )}
             >
-              <p className="font-monoish text-[10px] uppercase tracking-[0.28em] text-[hsl(var(--cyan))]">{result.status} · {result.phase}</p>
+              <p className="font-monoish text-sm uppercase tracking-[0.2em] text-[hsl(var(--cyan))]">{result.status} · {result.phase}</p>
               <p className="mt-2 text-sm font-semibold text-[hsl(var(--text))]">{result.topic}</p>
               <p className="mt-2 line-clamp-2 text-xs leading-5 text-[hsl(var(--muted))]">{result.casePrompt ?? result.id}</p>
               <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[hsl(var(--gold))]">{result.turnCount} turns</p>
@@ -1820,7 +1693,7 @@ function VotingView({ selectedCase }: { selectedCase: (typeof cases)[number] }) 
         <div className="mt-4 rounded-2xl border border-[hsl(var(--border))] bg-black/10 p-4">
           <p className="text-sm text-[hsl(var(--muted))]">Current case</p>
           <p className="mt-1 text-lg font-semibold text-[hsl(var(--text))]">{selectedCase.title}</p>
-          <p className="mt-1 font-monoish text-[10px] uppercase tracking-[0.28em] text-[hsl(var(--cyan))]">{selectedCase.docket} · {selectedCase.phase}</p>
+          <p className="mt-1 font-monoish text-sm uppercase tracking-[0.2em] text-[hsl(var(--cyan))]">{selectedCase.docket} · {selectedCase.phase}</p>
         </div>
         <div className="mt-4 grid gap-3">
           {voteOptions.map((option) => (

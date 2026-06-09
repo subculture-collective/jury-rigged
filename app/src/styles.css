@@ -82,10 +82,19 @@ h4,
 
 @media (min-width: 1280px) {
   .overlay-safe {
-    padding-top: max(2rem, env(safe-area-inset-top));
-    padding-right: max(2rem, env(safe-area-inset-right));
-    padding-bottom: max(2rem, env(safe-area-inset-bottom));
-    padding-left: max(2rem, env(safe-area-inset-left));
+    padding-top: max(6rem, env(safe-area-inset-top));
+    padding-right: max(6rem, env(safe-area-inset-right));
+    padding-bottom: max(6rem, env(safe-area-inset-bottom));
+    padding-left: max(6rem, env(safe-area-inset-left));
+  }
+}
+
+@media (max-height: 900px) {
+  .overlay-safe {
+    padding-top: max(3rem, env(safe-area-inset-top));
+    padding-right: max(3rem, env(safe-area-inset-right));
+    padding-bottom: max(3rem, env(safe-area-inset-bottom));
+    padding-left: max(3rem, env(safe-area-inset-left));
   }
 }
 
