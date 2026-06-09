@@ -145,3 +145,6 @@ vite.config.ts.timestamp-*
 
 # subcult-corp project reference
 subcult-corp/**/*
+
+# Kenney assets (local copy, already in repo root)
+public/assets/kenney-characters/
