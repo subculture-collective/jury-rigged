@@ -519,41 +519,27 @@ function roleTone(role?: string): RoleTone {
   return 'default';
 }
 
-function roleToneClass(tone: RoleTone) {
+function roleColor(tone: RoleTone) {
   switch (tone) {
-    case 'judge':
-      return 'text-[hsl(var(--gold))]';
-    case 'prosecutor':
-      return 'text-[hsl(var(--cyan))]';
-    case 'defense':
-      return 'text-[hsl(var(--purple))]';
-    case 'witness':
-      return 'text-[hsl(var(--green))]';
-    case 'bailiff':
-      return 'text-[hsl(var(--muted))]';
-    case 'jury':
-      return 'text-[hsl(var(--cyan))]';
-    default:
-      return 'text-[hsl(var(--text))]';
+    case 'judge':     return 'hsl(var(--caution))';
+    case 'prosecutor':return 'hsl(var(--pulse))';
+    case 'defense':   return 'hsl(var(--signal))';
+    case 'witness':   return 'hsl(var(--confirm))';
+    case 'bailiff':   return 'hsl(var(--ink-dim))';
+    case 'jury':      return 'hsl(var(--pulse))';
+    default:          return 'hsl(var(--ink))';
   }
 }
 
-function roleAccentClass(tone: RoleTone) {
+function roleLabel(tone: RoleTone) {
   switch (tone) {
-    case 'judge':
-      return 'border-l-[hsl(var(--gold))] bg-[hsl(var(--surface-2))]';
-    case 'prosecutor':
-      return 'border-l-[hsl(var(--cyan))] bg-[hsl(var(--surface-2))]';
-    case 'defense':
-      return 'border-l-[hsl(var(--purple))] bg-[hsl(var(--surface-2))]';
-    case 'witness':
-      return 'border-l-[hsl(var(--green))] bg-[hsl(var(--surface-2))]';
-    case 'bailiff':
-      return 'border-l-[hsl(var(--muted))] bg-[hsl(var(--surface-2))]';
-    case 'jury':
-      return 'border-l-[hsl(var(--cyan))] bg-[hsl(var(--surface-2))]';
-    default:
-      return 'border-l-[hsl(var(--border))] bg-[hsl(var(--surface-2))]';
+    case 'judge':     return 'JUDGE';
+    case 'prosecutor':return 'PROS';
+    case 'defense':   return 'DEFN';
+    case 'witness':   return 'WITN';
+    case 'bailiff':   return 'BAIL';
+    case 'jury':      return 'JURY';
+    default:          return 'ROLE';
   }
 }
 
@@ -635,10 +621,10 @@ function stingerFromEvent(event: LiveOverlayEvent | null): OverlayStinger | null
   return null;
 }
 
-function stingerToneClass(tone: OverlayStinger['tone']) {
-  if (tone === 'gold') return 'text-[hsl(var(--gold))] border-[hsl(var(--gold))] shadow-[8px_8px_0_hsl(var(--shadow))]';
-  if (tone === 'purple') return 'text-[hsl(var(--purple))] border-[hsl(var(--purple))] shadow-[8px_8px_0_hsl(var(--shadow))]';
-  return 'text-[hsl(var(--cyan))] border-[hsl(var(--cyan))] shadow-[8px_8px_0_hsl(var(--shadow))]';
+function stingerBorderColor(tone: OverlayStinger['tone']) {
+  if (tone === 'gold') return 'border-[hsl(var(--caution))]';
+  if (tone === 'purple') return 'border-[hsl(var(--signal))]';
+  return 'border-[hsl(var(--pulse))]';
 }
 
 function formatDuration(startedAt?: string, now = Date.now()) {
@@ -1060,24 +1046,38 @@ function CaseAutomationCard({ snapshot, error }: { snapshot: CaseQueueSnapshot |
 
 function OverlayStandby({ loading, error }: { loading: boolean; error: string | null }) {
   return (
-    <div className="grid min-h-screen place-items-center overflow-hidden bg-[hsl(var(--bg))] text-[hsl(var(--text))]">
-      <div className="relative aspect-video w-screen max-w-[calc(100vh*16/9)] overflow-hidden border-2 border-[hsl(var(--border)/0.45)]">
-      <div className="pointer-events-none absolute left-0 top-0 h-16 w-52 bg-[hsl(var(--surface-2))]" aria-hidden="true" />
-      <div className="pointer-events-none absolute bottom-0 right-0 h-24 w-80 bg-[hsl(var(--surface))]" aria-hidden="true" />
-      <div className="overlay-safe relative flex h-full items-center justify-center">
-        <div className="max-w-2xl rounded-2xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface))] px-8 py-10 text-center shadow-[8px_8px_0_hsl(var(--shadow))] sm:px-10">
-          <LivePill text={loading ? 'CONNECTING' : 'STANDBY'} />
-          <h1 className="mt-5 text-3xl font-semibold tracking-tight text-[hsl(var(--text))] sm:text-4xl">Waiting for a running courtroom session</h1>
-          <p className="mt-4 text-sm leading-6 text-[hsl(var(--muted))]">
-            This overlay only shows live session data. When the court goes on air, it will attach automatically and fill this frame with the active feed.
-          </p>
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-2 text-xs uppercase tracking-[0.24em] text-[hsl(var(--muted))]">
-            <span className="rounded-md border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-3 py-1">No demo session</span>
-            <span className="rounded-md border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-3 py-1">No archived fallback</span>
+    <div className="grid min-h-screen place-items-center overflow-hidden bg-[hsl(var(--void))] text-[hsl(var(--ink))] font-body">
+      <div className="relative aspect-video w-screen max-w-[calc(100vh*16/9)] overflow-hidden border border-[hsl(var(--border-faint))] hud-bracket">
+        <div className="overlay-safe flex h-full items-center justify-center">
+          <div className="max-w-lg text-center space-y-6">
+            <div className="flex items-center justify-center gap-3 text-hud uppercase tracking-[0.15em] text-[hsl(var(--ink-dim))]">
+              <span className="hud-led hud-led-sync" />
+              <span>JURYRIGGED v0.1</span>
+              <span className="hud-led hud-led-sync" />
+            </div>
+            <div className="border border-[hsl(var(--border-faint))] px-6 py-8">
+              <p className="text-xs uppercase tracking-[0.2em] text-[hsl(var(--pulse))] hud-prompt">
+                {loading ? 'ESTABLISHING UPLINK' : 'AWAITING SIGNAL'}
+              </p>
+              <p className="mt-4 text-lg font-semibold text-[hsl(var(--ink))]">
+                {loading ? 'Scanning for active courtroom session...' : 'No running session detected'}
+              </p>
+              <p className="mt-3 text-sm text-[hsl(var(--ink-dim))]">
+                This overlay attaches automatically when the court goes live. Keep this window open on your broadcast machine.
+              </p>
+              {error ? (
+                <p className="mt-4 text-xs uppercase tracking-[0.12em] text-[hsl(var(--caution))]">
+                  ▸ STATUS: {error}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex items-center justify-center gap-6 text-2xs uppercase tracking-[0.15em] text-[hsl(var(--ink-mute))]">
+              <span>SYS: NOMINAL</span>
+              <span>FRAME: 16:9</span>
+              <span>RATE: 60HZ</span>
+            </div>
           </div>
-          {error ? <p className="mt-5 text-xs uppercase tracking-[0.22em] text-[hsl(var(--gold))]">{error}</p> : null}
         </div>
-      </div>
       </div>
     </div>
   );
@@ -1092,23 +1092,19 @@ function SocialSignalCard({
   label: string;
   person?: TwitchSocialPerson;
   fallback: string;
-  tone: 'cyan' | 'gold' | 'purple';
+  tone: 'pulse' | 'caution' | 'signal';
 }) {
-  const toneClass =
-    tone === 'gold'
-      ? 'border-[hsl(var(--gold))] bg-[hsl(var(--surface-2))] text-[hsl(var(--gold))]'
-      : tone === 'purple'
-        ? 'border-[hsl(var(--purple))] bg-[hsl(var(--surface-2))] text-[hsl(var(--purple))]'
-        : 'border-[hsl(var(--cyan))] bg-[hsl(var(--surface-2))] text-[hsl(var(--cyan))]';
+  const borderColor = tone === 'signal' ? 'hsl(var(--signal))' : tone === 'caution' ? 'hsl(var(--caution))' : 'hsl(var(--pulse))';
+  const textColor = tone === 'signal' ? 'hsl(var(--signal))' : tone === 'caution' ? 'hsl(var(--caution))' : 'hsl(var(--pulse))';
 
   return (
-    <article className={cn('rounded-xl border-2 px-4 py-3 shadow-[4px_4px_0_hsl(var(--shadow))]', toneClass)}>
-      <p className="font-monoish text-sm uppercase tracking-[0.2em] opacity-80">{label}</p>
-      <p className="mt-2 truncate text-xl font-semibold text-[hsl(var(--text))]">{person?.displayName ?? fallback}</p>
-      <p className="mt-1 text-sm leading-5 text-[hsl(var(--muted))]">
-        {person?.giftCount ? `${person.giftCount} gifts · ` : ''}{person?.tier ? `Tier ${person.tier} · ` : ''}{socialTimeLabel(person)}
+    <div className="border-l-2 pl-3 py-1" style={{ borderColor }}>
+      <p className="text-2xs uppercase tracking-[0.12em] text-[hsl(var(--ink-mute))]">{label}</p>
+      <p className="truncate text-sm font-semibold text-[hsl(var(--ink))]">{person?.displayName ?? fallback}</p>
+      <p className="text-2xs text-[hsl(var(--ink-dim))]" style={{ color: textColor }}>
+        {person?.giftCount ? `${person.giftCount}g ` : ''}{person?.tier ? `T${person.tier} ` : ''}{socialTimeLabel(person)}
       </p>
-    </article>
+    </div>
   );
 }
 
@@ -1125,17 +1121,16 @@ function OverlayView() {
   );
   const jurors = useMemo(() => (session ? buildJurors(session.id) : []), [session]);
   const runtime = session ? formatDuration(session.startedAt ?? session.createdAt, now) : '00:00:00';
-  const liveStamp = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'syncing';
+  const liveStamp = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '--:--:--';
+  const connectedLed = connected ? 'hud-led-live' : 'hud-led-sync';
 
   useEffect(() => {
     if (!session) {
       setStinger(null);
       return undefined;
     }
-
     const nextStinger = stingerFromEvent(lastEvent);
     if (!nextStinger) return undefined;
-
     setStinger(nextStinger);
     const timer = window.setTimeout(() => setStinger(null), 4_000);
     return () => window.clearTimeout(timer);
@@ -1146,148 +1141,183 @@ function OverlayView() {
   }
 
   const queuedCount = queueSnapshot?.queuedCount ?? 0;
-  const activePromptSource = session.metadata.caseSource ? prettyLabel(session.metadata.caseSource) : 'Generated';
+  const activePromptSource = session.metadata.caseSource ? prettyLabel(session.metadata.caseSource) : 'GEN';
+  const evidenceCount = session.metadata.evidenceCards.length;
+  const objectionCount = session.metadata.objectionCount ?? 0;
 
   return (
-    <div className="grid min-h-screen place-items-center overflow-hidden bg-[hsl(var(--bg))] text-[hsl(var(--text))]">
-      <div className="relative aspect-video w-screen max-w-[calc(100vh*16/9)] overflow-hidden border-2 border-[hsl(var(--border)/0.45)]">
-      <div className="pointer-events-none absolute left-0 top-0 h-20 w-72 bg-[hsl(var(--surface-2))]" aria-hidden="true" />
-      <div className="pointer-events-none absolute bottom-0 right-0 h-28 w-96 bg-[hsl(var(--surface))]" aria-hidden="true" />
-      {stinger ? (
-        <div
-          className={cn(
-            'pointer-events-none absolute right-8 top-28 z-20 max-w-md rounded-xl border-2 bg-[hsl(var(--surface))] px-6 py-5 motion-safe:animate-pulse',
-            stingerToneClass(stinger.tone),
-          )}
-        >
-          <p className="font-monoish text-sm uppercase tracking-[0.28em]">Court stinger</p>
-          <h2 className="mt-2 text-3xl font-semibold text-[hsl(var(--text))]">{stinger.title}</h2>
-          <p className="mt-2 text-base leading-7 text-[hsl(var(--muted))]">{stinger.message}</p>
-        </div>
-      ) : null}
-      <div className="overlay-safe relative flex h-full flex-col gap-4">
-        <header className="flex items-start justify-between gap-4 rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface))] px-6 py-5 shadow-[8px_8px_0_hsl(var(--shadow))]">
-          <div className="min-w-0 space-y-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <p className="font-monoish text-sm uppercase tracking-[0.32em] text-[hsl(var(--cyan))]">JuryRigged · Live overlay</p>
-              <LivePill text={connected ? 'LIVE' : 'SYNCING'} />
-              <span className="rounded-md border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-3 py-1 text-sm uppercase tracking-[0.2em] text-[hsl(var(--muted))]">{session.phase}</span>
+    <div className="grid min-h-screen place-items-center overflow-hidden bg-[hsl(var(--void))] text-[hsl(var(--ink))] font-body">
+      <div className="relative aspect-video w-screen max-w-[calc(100vh*16/9)] overflow-hidden border border-[hsl(var(--border-faint))] hud-bracket">
+
+        {/* ═══ STINGER OVERLAY ═══ */}
+        {stinger ? (
+          <div className={cn(
+            'pointer-events-none absolute inset-0 z-30 flex items-center justify-center',
+            'motion-safe:animate-stinger-shake',
+          )}>
+            <div className={cn(
+              'border-3 px-8 py-6 bg-[hsl(var(--void-900))]',
+              stingerBorderColor(stinger.tone),
+            )}>
+              <p className="text-xs uppercase tracking-[0.2em] text-[hsl(var(--signal))] hud-prompt">
+                COURT STINGER
+              </p>
+              <p className="mt-3 text-3xl font-bold text-[hsl(var(--ink))]">{stinger.title}</p>
+              <p className="mt-2 text-base text-[hsl(var(--ink-dim))]">{stinger.message}</p>
             </div>
-            <h1 className="text-3xl font-semibold tracking-tight text-[hsl(var(--text))] sm:text-4xl">{session.topic}</h1>
-            <p className="max-w-4xl text-base leading-7 text-[hsl(var(--muted))]">{session.metadata.casePrompt}</p>
+          </div>
+        ) : null}
+
+        {/* ═══ STATUS BAR ═══ */}
+        <div className="flex items-center gap-6 px-4 py-1.5 border-b border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] text-2xs uppercase tracking-[0.1em] text-[hsl(var(--ink-dim))]">
+          <span className="text-[hsl(var(--signal))] font-semibold">JURYRIGGED</span>
+          <span>v0.1</span>
+          <span className="text-[hsl(var(--ink-mute))]">|</span>
+          <span className={connectedLed} />
+          <span>{connected ? 'LIVE' : 'SYNC'}</span>
+          <span className="text-[hsl(var(--ink-mute))]">|</span>
+          <span>SESSION:</span>
+          <span className="text-[hsl(var(--ink))]" title={session.id}>{session.id.slice(0, 8)}</span>
+          <span className="text-[hsl(var(--ink-mute))]">|</span>
+          <span>PHASE:</span>
+          <span className="text-[hsl(var(--pulse))]">{session.phase}</span>
+          <span className="text-[hsl(var(--ink-mute))]">|</span>
+          <span>UPTIME:</span>
+          <span className="text-[hsl(var(--signal))]">{runtime}</span>
+          <span className="flex-1" />
+          <span>{liveStamp}</span>
+          {error ? <span className="text-[hsl(var(--alert))]">· {error}</span> : null}
+        </div>
+
+        {/* ═══ CASE HEADER ═══ */}
+        <div className="px-4 py-2 border-b border-[hsl(var(--border-faint))]">
+          <p className="text-2xs uppercase tracking-[0.15em] text-[hsl(var(--ink-mute))]">CASE FILE</p>
+          <p className="text-lg font-bold text-[hsl(var(--ink))] truncate">{session.topic}</p>
+          <p className="text-xs text-[hsl(var(--ink-dim))] truncate">{session.metadata.casePrompt}</p>
+        </div>
+
+        {/* ═══ MAIN GRID: TRANSCRIPT + INSTRUMENTS ═══ */}
+        <div className="flex flex-1 min-h-0" style={{ height: 'calc(100% - 146px)' }}>
+          {/* ── LEFT: TRANSCRIPT ── */}
+          <div className="flex-1 flex flex-col min-w-0 border-r border-[hsl(var(--border-faint))]">
+            <div className="flex items-center gap-4 px-4 py-1.5 border-b border-[hsl(var(--border-faint))] text-2xs uppercase tracking-[0.1em] text-[hsl(var(--ink-dim))]">
+              <span className="text-[hsl(var(--pulse))]">▸</span>
+              <span>COMMS LOG</span>
+              <span className="flex-1" />
+              <span className="text-[hsl(var(--ink-mute))]">{session.turnCount}T / {transcriptTurns.length} VISIBLE</span>
+              <span className="text-[hsl(var(--ink-mute))]">|</span>
+              <span>NEWEST FIRST</span>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4" role="log" aria-live="polite" aria-relevant="additions text">
+              {transcriptTurns.length > 0 ? (
+                <div className="py-2 space-y-0">
+                  {transcriptTurns.map((turn) => {
+                    const tone = roleTone(turn.role);
+                    const color = roleColor(tone);
+                    const abbrev = roleLabel(tone);
+                    return (
+                      <article key={turn.id} className="hud-transcript-entry">
+                        <span className="text-2xs text-[hsl(var(--ink-mute))] tabular-nums whitespace-nowrap">
+                          {formatOverlayTimestamp(turn.createdAt)}
+                        </span>
+                        <div>
+                          <p className="text-2xs font-semibold" style={{ color }}>
+                            <span className="text-[hsl(var(--ink-mute))]">[{abbrev}]</span>{' '}
+                            {prettyLabel(turn.speaker)}
+                            <span className="text-[hsl(var(--ink-mute))] ml-2 text-[0.5rem]">#{turn.turnNumber} · {prettyLabel(turn.phase)}</span>
+                          </p>
+                          <p className="text-sm leading-relaxed text-[hsl(var(--ink-dim))] mt-0.5">{turn.dialogue}</p>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-full text-xs text-[hsl(var(--ink-mute))]">
+                  <span className="hud-cursor">AWAITING TRANSMISSION</span>
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="shrink-0 text-right">
-            <p className="font-monoish text-sm uppercase tracking-[0.26em] text-[hsl(var(--muted))]">Runtime</p>
-            <p className="mt-2 text-2xl font-semibold text-[hsl(var(--text))]">{runtime}</p>
-            <p className="mt-1 text-sm text-[hsl(var(--muted))]">Synced {liveStamp}{error ? ` · ${error}` : ''}</p>
-          </div>
-        </header>
-
-        <main className="grid flex-1 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.75fr)]">
-          <section className="flex min-h-0 flex-col gap-4">
-            <Surface className="min-h-0 flex-1 p-6">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="font-monoish text-sm uppercase tracking-[0.28em] text-[hsl(var(--cyan))]">Current beat</p>
-                  <h2 className="mt-2 text-3xl font-semibold text-[hsl(var(--text))]">Transcript feed</h2>
-                </div>
-                <div className="rounded-md border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-3 py-1 text-sm uppercase tracking-[0.22em] text-[hsl(var(--muted))]">{session.turnCount} turns · showing {transcriptTurns.length}</div>
+          {/* ── RIGHT: INSTRUMENT PANEL ── */}
+          <div className="w-[320px] flex flex-col min-h-0 bg-[hsl(var(--void-800))] overflow-y-auto">
+            {/* Jury Manifest */}
+            <div className="border-b border-[hsl(var(--border-faint))]">
+              <div className="px-3 py-1.5 text-2xs uppercase tracking-[0.12em] text-[hsl(var(--signal))] flex items-center gap-2">
+                <span className="hud-led hud-led-ok" />
+                <span>JURY MANIFEST</span>
+                <span className="flex-1" />
+                <span className="text-[hsl(var(--ink-mute))]">{jurors.length} SEATED</span>
               </div>
-
-              <div className="mt-5 min-h-0 flex-1 overflow-hidden rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))]">
-                <div className="flex items-center justify-between gap-3 border-b border-[hsl(var(--border))] px-4 py-3">
-                  <p className="font-monoish text-sm uppercase tracking-[0.26em] text-[hsl(var(--muted))]">Newest first</p>
-                  <p className="text-sm uppercase tracking-[0.22em] text-[hsl(var(--muted))]">{session.phase} · live transcript</p>
-                </div>
-                <div className="max-h-[min(58vh,760px)] overflow-y-auto px-4 py-4" role="log" aria-live="polite" aria-relevant="additions text">
-                  <div className="space-y-3">
-                    {transcriptTurns.length > 0 ? transcriptTurns.map((turn, index) => {
-                      const tone = roleTone(turn.role);
-                      const alignRight = index % 2 === 1;
-                      return (
-                        <article key={turn.id} className={cn('group flex w-full', alignRight ? 'justify-end text-right' : 'justify-start text-left')}>
-                          <div
-                            className={cn(
-                              'max-w-[88%] border-l-4 border-t border-t-[hsl(var(--border))] px-4 py-3',
-                              roleAccentClass(tone),
-                            )}
-                          >
-                            <div className={cn('flex flex-wrap items-center gap-2 text-sm uppercase tracking-[0.16em] text-[hsl(var(--muted))]', alignRight ? 'justify-end' : 'justify-start')}>
-                              <span className="font-monoish">#{turn.turnNumber}</span>
-                              <span className={cn('font-semibold', roleToneClass(tone))}>{prettyLabel(turn.speaker)}</span>
-                              <span className={roleToneClass(tone)}>{prettyLabel(turn.role)}</span>
-                              <span>{prettyLabel(turn.phase)}</span>
-                              <span>{formatOverlayTimestamp(turn.createdAt)}</span>
-                            </div>
-                            <p className="mt-2 text-lg leading-7 font-normal text-[hsl(var(--text)/0.94)]">{turn.dialogue}</p>
-                          </div>
-                        </article>
-                      );
-                    }) : (
-                      <div className="rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface))] px-4 py-4 text-base text-[hsl(var(--muted))]">The stream is live, but no spoken turn has arrived yet.</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </Surface>
-          </section>
-
-          <aside className="flex min-h-0 flex-col gap-4">
-            <Surface className="p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-monoish text-base uppercase tracking-[0.18em] text-[hsl(var(--gold))]">Queue signal</p>
-                  <h2 className="mt-2 text-3xl font-semibold text-[hsl(var(--text))]">Prompt pipeline</h2>
-                </div>
-                <p className="font-monoish text-4xl font-semibold text-[hsl(var(--gold))]">{queuedCount}</p>
-              </div>
-              <p className="mt-4 text-lg leading-7 text-[hsl(var(--text))]">
-                Active source: <span className="text-[hsl(var(--cyan))]">{activePromptSource}</span>
-              </p>
-              <p className="mt-2 text-base leading-7 text-[hsl(var(--muted))]">
-                {queuedCount === 0 ? 'No public prompts waiting; generated cases can fill the next slot.' : `${queuedCount} public prompt${queuedCount === 1 ? '' : 's'} waiting behind the current case.`}
-              </p>
-            </Surface>
-
-            <Surface className="p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-monoish text-sm uppercase tracking-[0.24em] text-[hsl(var(--cyan))]">Twitch signal</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-[hsl(var(--text))]">Community feed</h2>
-                </div>
-                <p className="text-sm uppercase tracking-[0.2em] text-[hsl(var(--muted))]">{socialError ?? 'live'}</p>
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <SocialSignalCard label="Latest follower" person={social.latestFollower} fallback="Waiting for follow" tone="cyan" />
-                <SocialSignalCard label="Latest subscriber" person={social.latestSubscriber} fallback="Waiting for sub" tone="purple" />
-                <SocialSignalCard label="Latest gifter" person={social.latestGifter} fallback="Waiting for gift" tone="gold" />
-                <SocialSignalCard label="Most gifted" person={social.mostGifted} fallback="No gift leader" tone="gold" />
-              </div>
-            </Surface>
-
-            <Surface className="p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-monoish text-sm uppercase tracking-[0.24em] text-[hsl(var(--gold))]">Jury panel</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-[hsl(var(--text))]">Six deterministic jurors</h2>
-                </div>
-                <p className="text-sm uppercase tracking-[0.2em] text-[hsl(var(--muted))]">Seeded by session id</p>
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="px-3 pb-3 space-y-0.5">
                 {jurors.map((juror) => (
-                  <article key={juror.id} className="rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-4">
-                    <p className="font-monoish text-sm uppercase tracking-[0.18em] text-[hsl(var(--gold))]">{juror.label}</p>
-                    <p className="mt-2 text-base font-semibold text-[hsl(var(--text))]">{juror.name}</p>
-                    <p className="mt-2 text-sm uppercase tracking-[0.18em] text-[hsl(var(--gold))]">{juror.role}</p>
-                    <p className="mt-2 text-base leading-7 text-[hsl(var(--muted))]">{juror.trait}</p>
-                  </article>
+                  <div key={juror.id} className="flex items-center gap-2 py-0.5 border-b border-[hsl(var(--border-faint)/0.3)] last:border-0">
+                    <span className="text-2xs text-[hsl(var(--ink-mute))] w-8">{juror.label}</span>
+                    <span className="text-xs text-[hsl(var(--ink))] flex-1 truncate">{juror.name}</span>
+                    <span className="text-2xs text-[hsl(var(--ink-dim))] uppercase">{juror.role.slice(0,5)}</span>
+                  </div>
                 ))}
               </div>
-            </Surface>
-          </aside>
-        </main>
-      </div>
+            </div>
+
+            {/* Twitch Signals */}
+            <div className="border-b border-[hsl(var(--border-faint))]">
+              <div className="px-3 py-1.5 text-2xs uppercase tracking-[0.12em] text-[hsl(var(--pulse))] flex items-center gap-2">
+                <span className="hud-led hud-led-sync" />
+                <span>SIGNALS</span>
+                <span className="flex-1" />
+                <span className="text-[hsl(var(--ink-mute))]">{socialError ?? 'LIVE'}</span>
+              </div>
+              <div className="px-3 pb-3 space-y-2">
+                <SocialSignalCard label="FOLLOW" person={social.latestFollower} fallback="---" tone="pulse" />
+                <SocialSignalCard label="SUB" person={social.latestSubscriber} fallback="---" tone="signal" />
+                <SocialSignalCard label="GIFT" person={social.latestGifter} fallback="---" tone="caution" />
+                <SocialSignalCard label="TOP GIFT" person={social.mostGifted} fallback="---" tone="caution" />
+              </div>
+            </div>
+
+            {/* Queue Signal */}
+            <div className="border-b border-[hsl(var(--border-faint))]">
+              <div className="px-3 py-1.5 text-2xs uppercase tracking-[0.12em] text-[hsl(var(--caution))] flex items-center gap-2">
+                <span className="hud-led hud-led-warn" />
+                <span>QUEUE</span>
+                <span className="flex-1" />
+                <span className="text-[hsl(var(--ink))] font-semibold">{queuedCount}</span>
+              </div>
+              <div className="px-3 pb-3">
+                <div className="hud-row">
+                  <span className="hud-row-key">Source</span>
+                  <span className="hud-row-val">{activePromptSource}</span>
+                </div>
+                <div className="hud-row">
+                  <span className="hud-row-key">Status</span>
+                  <span className="hud-row-val" style={{ color: queuedCount > 0 ? 'hsl(var(--caution))' : 'hsl(var(--ink-dim))' }}>
+                    {queuedCount === 0 ? 'IDLE' : `${queuedCount} WAITING`}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Evidence / Objections compact readout */}
+            <div className="px-3 py-2 space-y-0.5">
+              <div className="hud-row">
+                <span className="hud-row-key">Evidence</span>
+                <span className="hud-row-val">{evidenceCount} CARDS</span>
+              </div>
+              <div className="hud-row">
+                <span className="hud-row-key">Objections</span>
+                <span className="hud-row-val" style={{ color: objectionCount > 0 ? 'hsl(var(--alert))' : 'hsl(var(--ink-dim))' }}>
+                  {objectionCount}
+                </span>
+              </div>
+              <div className="hud-row">
+                <span className="hud-row-key">Case Type</span>
+                <span className="hud-row-val uppercase">{prettyLabel(session.metadata.caseType)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

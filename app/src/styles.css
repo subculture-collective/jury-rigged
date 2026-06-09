@@ -1,121 +1,330 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ──────────────────────────────────────────────
+   SEMANTIC TOKENS
+   All colors in HSL for Tailwind opacity support
+   ────────────────────────────────────────────── */
 :root {
-  --bg: 240 10% 4%;          /* #09090B */
-  --surface: 240 6% 10%;     /* #18181B */
-  --surface-2: 240 5% 16%;   /* #27272A */
-  --border: 240 4% 28%;      /* #3F3F46 */
-  --text: 0 0% 98%;          /* #FAFAFA */
-  --muted: 240 5% 65%;       /* #A1A1AA */
-  --cyan: 239 84% 67%;       /* #6366F1 info/accent-secondary */
-  --purple: 271 91% 60%;     /* #A855F7 accent-primary */
-  --red: 347 77% 54%;        /* #F43F5E error */
-  --gold: 38 92% 50%;        /* #F59E0B warning */
-  --green: 174 80% 40%;      /* #14B8A6 success, not terminal green */
-  --shadow: 0 0% 0%;
+  /* Background hierarchy */
+  --void:        240 10% 4%;    /* #09090B — main canvas */
+  --void-900:    240 8% 8%;     /* dark but not black */
+  --void-800:    240 6% 12%;    /* slightly lifted */
+  --panel:       240 5% 14%;    /* #27272A — primary surfaces */
+  --panel-raised:240 6% 18%;    /* active/hover surfaces */
+
+  /* Borders */
+  --border:       240 4% 26%;   /* #3F3F46 — standard */
+  --border-strong:240 4% 38%;   /* emphasized dividers */
+  --border-faint: 240 4% 18%;   /* subtle separators */
+
+  /* Text */
+  --ink:         0 0% 98%;      /* #FAFAFA — primary */
+  --ink-dim:     240 5% 72%;    /* secondary, brighter than before */
+  --ink-mute:    240 4% 48%;    /* tertiary, disabled */
+
+  /* Accents */
+  --signal:      271 91% 65%;   /* #A855F7 — primary accent, slightly brighter */
+  --signal-bright:271 95% 75%;
+  --pulse:       239 84% 70%;   /* #6366F1 — secondary accent */
+  --pulse-bright: 239 88% 78%;
+
+  /* States */
+  --alert:       347 77% 56%;   /* error */
+  --caution:     38 92% 52%;    /* warning */
+  --confirm:     174 80% 42%;   /* success */
+  --dead:        240 4% 38%;    /* inactive / disabled */
+
   color-scheme: dark;
 }
 
-html,
-body,
-#root {
+/* ──────────────────────────────────────────────
+   BASE RESET
+   ────────────────────────────────────────────── */
+html, body, #root {
   min-height: 100%;
+  background: hsl(var(--void));
+  color: hsl(var(--ink));
 }
 
 body {
   margin: 0;
-  position: relative;
   overflow-x: hidden;
-  background: hsl(var(--bg));
-  color: hsl(var(--text));
-  font-family:
-    'Space Grotesk',
-    'Inter',
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    sans-serif;
-}
-
-body::before {
-  content: '';
-  pointer-events: none;
-  position: fixed;
-  inset: 0;
-  border: 24px solid hsl(var(--border) / 0.14);
-  opacity: 0.5;
-}
-
-::selection {
-  background: hsl(var(--cyan) / 0.3);
-  color: hsl(var(--text));
-}
-
-h1,
-h2,
-h3,
-h4,
-.font-display {
-  font-family:
-    'Space Grotesk',
-    'Sora',
-    'Archivo',
-    'Inter',
-    system-ui,
-    sans-serif;
-}
-
-.font-monoish {
-  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
-}
-
-.overlay-safe {
-  padding-top: max(1.5rem, env(safe-area-inset-top));
-  padding-right: max(1.5rem, env(safe-area-inset-right));
-  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
-  padding-left: max(1.5rem, env(safe-area-inset-left));
-}
-
-@media (min-width: 1280px) {
-  .overlay-safe {
-    padding-top: max(6rem, env(safe-area-inset-top));
-    padding-right: max(6rem, env(safe-area-inset-right));
-    padding-bottom: max(6rem, env(safe-area-inset-bottom));
-    padding-left: max(6rem, env(safe-area-inset-left));
-  }
-}
-
-@media (max-height: 900px) {
-  .overlay-safe {
-    padding-top: max(3rem, env(safe-area-inset-top));
-    padding-right: max(3rem, env(safe-area-inset-right));
-    padding-bottom: max(3rem, env(safe-area-inset-bottom));
-    padding-left: max(3rem, env(safe-area-inset-left));
-  }
+  font-family: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 * {
   box-sizing: border-box;
 }
 
-button,
-input,
-select,
-textarea {
+button, input, select, textarea {
   font: inherit;
 }
 
+::selection {
+  background: hsl(var(--signal) / 0.4);
+  color: hsl(var(--ink));
+}
+
+/* ──────────────────────────────────────────────
+   SCROLLBARS — industrial, not browser-like
+   ────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(var(--void-800));
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 1px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--border-strong));
+}
+
+/* ──────────────────────────────────────────────
+   REDUCED MOTION
+   ────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* ══════════════════════════════════════════════
+   HUD UTILITY CLASSES
+   ══════════════════════════════════════════════ */
+
+/* ── Corner brackets (sci-fi HUD frame markers) ── */
+.hud-bracket,
+.hud-bracket-tl,
+.hud-bracket-tr,
+.hud-bracket-bl,
+.hud-bracket-br { position: relative; }
+
+.hud-bracket::before,
+.hud-bracket::after,
+.hud-bracket-tl::before,
+.hud-bracket-tr::before,
+.hud-bracket-bl::before,
+.hud-bracket-br::before {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-color: hsl(var(--border));
+  border-style: solid;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.hud-bracket::before  { top: 0; left: 0;   border-width: 2px 0 0 2px; }
+.hud-bracket::after   { top: 0; right: 0;  border-width: 2px 2px 0 0; }
+.hud-bracket-tl::before { top: 0; left: 0; border-width: 2px 0 0 2px; }
+.hud-bracket-tr::before { top: 0; right: 0; border-width: 2px 2px 0 0; }
+.hud-bracket-bl::before { bottom: 0; left: 0; border-width: 0 0 2px 2px; }
+.hud-bracket-br::before { bottom: 0; right: 0; border-width: 0 2px 2px 0; }
+
+/* Active/accent versions */
+.hud-bracket-accent::before,
+.hud-bracket-accent::after { border-color: hsl(var(--signal)); }
+
+/* ── Terminal prompt marker ── */
+.hud-prompt::before {
+  content: '▸ ';
+  color: hsl(var(--signal));
+}
+
+/* ── LED indicator dots ── */
+.hud-led {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: hsl(var(--dead));
+}
+.hud-led-live  { background: hsl(var(--alert));   box-shadow: 0 0 6px hsl(var(--alert) / 0.6); }
+.hud-led-sync  { background: hsl(var(--pulse));   box-shadow: 0 0 6px hsl(var(--pulse) / 0.6); }
+.hud-led-ok    { background: hsl(var(--confirm)); box-shadow: 0 0 6px hsl(var(--confirm) / 0.6); }
+.hud-led-warn  { background: hsl(var(--caution)); box-shadow: 0 0 6px hsl(var(--caution) / 0.6); }
+
+/* ── Blinking cursor ── */
+.hud-cursor::after {
+  content: '█';
+  animation: blink 1s step-end infinite;
+  color: hsl(var(--signal));
+}
+
+/* ── Scan line overlay (toggle with class) ── */
+.hud-scan {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    hsl(var(--void) / 0.03) 2px,
+    hsl(var(--void) / 0.03) 4px
+  );
+}
+.hud-scan::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    transparent 60%,
+    hsl(var(--void) / 0.08) 100%
+  );
+}
+
+/* ── Data row (terminal-style key-value) ── */
+.hud-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.125rem 0;
+}
+.hud-row-key {
+  color: hsl(var(--ink-mute));
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+.hud-row-key::after {
+  content: ':';
+}
+.hud-row-val {
+  color: hsl(var(--ink));
+  font-weight: 500;
+}
+
+/* ── Section header line ── */
+.hud-section {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid hsl(var(--border-faint));
+  margin-bottom: 0.75rem;
+}
+.hud-section-label {
+  color: hsl(var(--signal));
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.hud-section-line {
+  flex: 1;
+  height: 1px;
+  background: hsl(var(--border-faint));
+}
+
+/* ── Status bar ── */
+.hud-statusbar {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.375rem 1rem;
+  background: hsl(var(--void-800));
+  border-bottom: 1px solid hsl(var(--border-faint));
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: hsl(var(--ink-dim));
+}
+
+/* ── Panel frame ── */
+.hud-panel {
+  background: hsl(var(--panel));
+  border: 1px solid hsl(var(--border-faint));
+  padding: 0.75rem;
+}
+.hud-panel-raised {
+  background: hsl(var(--panel-raised));
+  border: 1px solid hsl(var(--border));
+}
+
+/* ── Divisor line ── */
+.hud-divide {
+  border: none;
+  border-top: 1px solid hsl(var(--border-faint));
+  margin: 0.5rem 0;
+}
+
+/* ── Badge / chip ── */
+.hud-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  border: 1px solid currentColor;
+  color: hsl(var(--ink-dim));
+}
+
+/* ── Transcript entry (comms-log style) ── */
+.hud-transcript-entry {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem 0.75rem;
+  padding: 0.375rem 0;
+  border-bottom: 1px solid hsl(var(--border-faint) / 0.5);
+}
+.hud-transcript-meta {
+  grid-column: 1;
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: hsl(var(--ink-mute));
+  white-space: nowrap;
+}
+.hud-transcript-speaker {
+  grid-column: 2;
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+.hud-transcript-dialogue {
+  grid-column: 2;
+  font-size: 0.875rem;
+  line-height: 1.7;
+  color: hsl(var(--ink-dim));
+  padding-bottom: 0.25rem;
+}
+
+/* ── Overlay safe-area ── */
+.overlay-safe {
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  padding-left: max(1rem, env(safe-area-inset-left));
+}
+@media (min-width: 1280px) {
+  .overlay-safe {
+    padding-top: max(2rem, env(safe-area-inset-top));
+    padding-right: max(2rem, env(safe-area-inset-right));
+    padding-bottom: max(2rem, env(safe-area-inset-bottom));
+    padding-left: max(2rem, env(safe-area-inset-left));
   }
 }
