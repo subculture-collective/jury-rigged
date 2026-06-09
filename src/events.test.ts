@@ -535,3 +535,29 @@ test('assertEventPayload: case_file_generated missing caseFile', () => {
         TypeError,
     );
 });
+
+// ---------------------------------------------------------------------------
+// Twitch social events
+// ---------------------------------------------------------------------------
+
+test('assertEventPayload: twitch_social_updated accepts redacted social only', () => {
+    assert.doesNotThrow(() =>
+        assertEventPayload(
+            makeEvent('twitch_social_updated', {
+                social: {
+                    latestFollower: {
+                        displayName: 'NewFan',
+                        followedAt: new Date().toISOString(),
+                    },
+                },
+            }),
+        ),
+    );
+});
+
+test('assertEventPayload: twitch_social_updated missing social', () => {
+    assert.throws(
+        () => assertEventPayload(makeEvent('twitch_social_updated', {})),
+        TypeError,
+    );
+});

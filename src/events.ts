@@ -470,6 +470,14 @@ export function assertEventPayload(event: CourtEvent): void {
             }
             break;
 
+        case 'twitch_social_updated':
+            if (!hasObjectKey(payload, 'social')) {
+                throw new TypeError(
+                    `twitch_social_updated payload missing required object field: social`,
+                );
+            }
+            break;
+
         // Phase 7 event types
         case 'render_directive':
             if (

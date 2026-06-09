@@ -7,6 +7,9 @@
 
 import crypto from 'crypto';
 import type { Request, Response } from 'express';
+import type { TwitchSocialEvent } from '../types.js';
+
+type RawBodyRequest = Request & { rawBody?: Buffer };
 
 export interface EventSubEvent {
     subscription: {
@@ -70,17 +73,24 @@ export function validateEventSubSignature(
         return false;
     }
 
-    const message =
-        twitch_message_id + twitch_timestamp + JSON.stringify(request.body);
+    const body = (request as RawBodyRequest).rawBody?.toString('utf8') ?? JSON.stringify(request.body);
+    const message = twitch_message_id + twitch_timestamp + body;
     const hmac = crypto.createHmac('sha256', clientSecret);
     hmac.update(message);
     const computed_signature = `sha256=${hmac.digest('hex')}`;
 
+    const received = Buffer.from(twitch_signature);
+    const computed = Buffer.from(computed_signature);
+    if (received.length !== computed.length) return false;
+
     // Use constant-time comparison to prevent timing attacks
-    return crypto.timingSafeEqual(
-        Buffer.from(twitch_signature),
-        Buffer.from(computed_signature),
-    );
+    return crypto.timingSafeEqual(received, computed);
+}
+
+export function parseEventSubChallenge(body: unknown): string | undefined {
+    if (typeof body !== 'object' || body === null) return undefined;
+    const event = body as { challenge?: unknown };
+    return typeof event.challenge === 'string' && event.challenge.trim() ? event.challenge : undefined;
 }
 
 /**
@@ -111,6 +121,76 @@ export function parseEventSubWebhook(body: unknown): EventSubEvent | null {
     }
 
     return event as EventSubEvent;
+}
+
+function readString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function readNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function parseSocialUser(event: Record<string, unknown>):
+    | { id?: string; login?: string; displayName: string }
+    | undefined {
+    const displayName = readString(event.user_name) ?? readString(event.user_display_name);
+    if (!displayName) return undefined;
+
+    return {
+        id: readString(event.user_id),
+        login: readString(event.user_login),
+        displayName,
+    };
+}
+
+export function parseSocialEventSubNotification(
+    body: unknown,
+): TwitchSocialEvent | undefined {
+    if (!body || typeof body !== 'object') return undefined;
+
+    const message = body as {
+        subscription?: { type?: unknown };
+        event?: Record<string, unknown>;
+    };
+    const type = readString(message.subscription?.type);
+    const event = message.event;
+    if (!type || !event) return undefined;
+
+    const occurredAt = new Date().toISOString();
+
+    if (type === 'channel.follow') {
+        const user = parseSocialUser(event);
+        if (!user) return undefined;
+        return { type: 'follow', user, occurredAt };
+    }
+
+    if (type === 'channel.subscribe') {
+        const user = parseSocialUser(event);
+        if (!user) return undefined;
+        return {
+            type: 'subscribe',
+            user,
+            tier: readString(event.tier),
+            occurredAt,
+        };
+    }
+
+    if (type === 'channel.subscription.gift') {
+        const isAnonymous = event.is_anonymous === true;
+        const gifter = isAnonymous ? { displayName: 'Anonymous' } : parseSocialUser(event);
+        if (!gifter) return undefined;
+        return {
+            type: 'gift_sub',
+            user: { displayName: 'Gift recipient' },
+            gifter,
+            giftCount: readNumber(event.total) ?? readNumber(event.cumulative_total) ?? 1,
+            tier: readString(event.tier),
+            occurredAt,
+        };
+    }
+
+    return undefined;
 }
 
 /**

@@ -34,12 +34,15 @@ import {
 import { VoteSpamGuard } from './moderation/vote-spam.js';
 import {
     validateEventSubSignature,
+    parseEventSubChallenge,
     parseEventSubWebhook,
+    parseSocialEventSubNotification,
     mapRedemptionToAction,
     RedemptionRateLimiter,
     DEFAULT_REDEMPTION_RATE_LIMIT,
 } from './twitch/eventsub.js';
 import { initTwitchBot } from './twitch/bot.js';
+import { TwitchSocialFeed } from './twitch/social-feed.js';
 import {
     createLLMAuditLogStore,
     resolveLLMAuditConfig,
@@ -75,6 +78,7 @@ import type {
     CourtPhase,
     GenreTag,
     PromptBankEntry,
+    TwitchSocialSnapshot,
     TranscriptSearchResponse,
 } from './types.js';
 
@@ -117,6 +121,31 @@ async function verifyTurnstile(token: string, ip?: string): Promise<boolean> {
         logger.warn('[public-queue] Turnstile verification failed', { error });
         return false;
     }
+}
+
+function redactTwitchSocialSnapshot(snapshot: TwitchSocialSnapshot): TwitchSocialSnapshot {
+    return {
+        latestFollower: snapshot.latestFollower ? {
+            displayName: snapshot.latestFollower.displayName,
+            followedAt: snapshot.latestFollower.followedAt,
+        } : undefined,
+        latestSubscriber: snapshot.latestSubscriber ? {
+            displayName: snapshot.latestSubscriber.displayName,
+            subscribedAt: snapshot.latestSubscriber.subscribedAt,
+            tier: snapshot.latestSubscriber.tier,
+        } : undefined,
+        latestGifter: snapshot.latestGifter ? {
+            displayName: snapshot.latestGifter.displayName,
+            giftedAt: snapshot.latestGifter.giftedAt,
+            giftCount: snapshot.latestGifter.giftCount,
+        } : undefined,
+        mostGifted: snapshot.mostGifted ? {
+            displayName: snapshot.mostGifted.displayName,
+            giftCount: snapshot.mostGifted.giftCount,
+            updatedAt: snapshot.mostGifted.updatedAt,
+        } : undefined,
+        updatedAt: snapshot.updatedAt,
+    };
 }
 
 function isAdminTriggerKind(value: unknown): value is AdminTriggerKind {
@@ -983,6 +1012,7 @@ function registerApiRoutes(
         autoGenerateCases: boolean;
         autoCaseIdleDelayMs: number;
         simulationControl: SimulationControlState;
+        socialFeed: TwitchSocialFeed;
         onLlmFallback?: RunCourtSessionOptions['onLlmFallback'];
         onLlmSuccess?: RunCourtSessionOptions['onLlmSuccess'];
         onSessionCompleted?: (sessionId: string) => void | Promise<void>;
@@ -1215,6 +1245,10 @@ function registerApiRoutes(
             count: results.length,
         };
         res.json(response);
+    });
+
+    app.get('/api/public/twitch/social', audienceInteractionLimiter, (_req, res) => {
+        res.json({ social: redactTwitchSocialSnapshot(deps.socialFeed.getSnapshot()) });
     });
 
     const getRunningOrPendingSession = async () => {
@@ -1710,7 +1744,25 @@ function registerApiRoutes(
                 return res.status(403).json({ error: 'Invalid signature' });
             }
 
+            const challenge = parseEventSubChallenge(req.body);
+            if (challenge) {
+                return res.status(200).type('text/plain').send(challenge);
+            }
+
             // Parse webhook
+            const socialEvent = parseSocialEventSubNotification(req.body);
+            if (socialEvent) {
+                const social = deps.socialFeed.record(socialEvent);
+                const redactedSocial = redactTwitchSocialSnapshot(social);
+                const active = await getRunningOrPendingSession();
+                if (active) {
+                    deps.store.emitEvent(active.id, 'twitch_social_updated', {
+                        social: redactedSocial,
+                    });
+                }
+                return res.json({ ok: true, social: redactedSocial });
+            }
+
             const event = parseEventSubWebhook(req.body);
             if (!event) {
                 // Return 204 for verification or non-redemption events
@@ -1886,6 +1938,7 @@ export async function createServerApp(
         store,
         resolveRecordingsDir(),
     );
+    const socialFeed = new TwitchSocialFeed();
 
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
@@ -1919,7 +1972,11 @@ export async function createServerApp(
     );
     pruneTimer.unref();
 
-    app.use(express.json());
+    app.use(express.json({
+        verify: (req, _res, buffer) => {
+            (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
+        },
+    }));
     app.use(express.urlencoded({ extended: false }));
 
     const adminAuth = resolveAdminAuthConfig();
@@ -1939,6 +1996,7 @@ export async function createServerApp(
         autoGenerateCases,
         autoCaseIdleDelayMs,
         simulationControl,
+        socialFeed,
         onLlmFallback,
         onLlmSuccess,
         onSessionCompleted: sessionId => twitchBot?.announceTranscriptLink(sessionId),

@@ -194,6 +194,31 @@ export interface AdminTriggerRequest {
     message: string;
 }
 
+export type TwitchSocialEventType = 'follow' | 'subscribe' | 'gift_sub';
+
+export interface TwitchSocialUser {
+    id?: string;
+    login?: string;
+    displayName: string;
+}
+
+export interface TwitchSocialEvent {
+    type: TwitchSocialEventType;
+    user: TwitchSocialUser;
+    gifter?: TwitchSocialUser;
+    giftCount?: number;
+    tier?: string;
+    occurredAt: string;
+}
+
+export interface TwitchSocialSnapshot {
+    latestFollower?: TwitchSocialUser & { followedAt: string };
+    latestSubscriber?: TwitchSocialUser & { subscribedAt: string; tier?: string };
+    latestGifter?: TwitchSocialUser & { giftedAt: string; giftCount: number };
+    mostGifted?: TwitchSocialUser & { giftCount: number; updatedAt: string };
+    updatedAt?: string;
+}
+
 export type ModerationReasonCode =
     | 'hate_speech'
     | 'violence'
@@ -231,6 +256,7 @@ export type CourtEventType =
     | 'broadcast_hook_failed'
     | 'evidence_revealed'
     | 'objection_count_changed'
+    | 'twitch_social_updated'
     // Phase 7 additions
     | 'render_directive'
     | 'witness_statement'
