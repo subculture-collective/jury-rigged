@@ -204,6 +204,14 @@ function getCaseParam() {
   return new URLSearchParams(window.location.search).get('case') ?? '';
 }
 
+function navigateToTranscript(id: string) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('view', 'transcripts');
+  url.searchParams.set('case', id);
+  window.history.pushState({}, '', url);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
 // ── Type guards ──
 function isRecord(value: unknown): value is ApiRecord {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -1057,7 +1065,6 @@ function DashboardView() {
             </div>
             <div className="flex flex-col gap-2 shrink-0">
               <a href="/app/?view=overlay" className="border border-[hsl(var(--pulse))] px-3 py-1.5 text-xs text-[hsl(var(--pulse))] text-center hover:bg-[hsl(var(--pulse)/0.1)]">WATCH OVERLAY</a>
-              <a href={`/app/?view=transcripts&case=${encodeURIComponent(running.id)}`} className="border border-[hsl(var(--signal))] px-3 py-1.5 text-xs text-[hsl(var(--signal))] text-center hover:bg-[hsl(var(--signal)/0.1)]">VIEW TRANSCRIPT</a>
             </div>
           </div>
         </ConsolePanel>
@@ -1079,11 +1086,15 @@ function DashboardView() {
         <ConsolePanel className="lg:col-span-2 p-4">
           <HudSection label={`Recent sessions · ${sessions.length} total`} note={sessionsLoading ? 'Loading...' : ''} />
           <div className="mt-3 space-y-1">
-            {recent.length > 0 ? recent.map((s) => (
-              <a
+            {recent.length > 0 ? recent.map((s) => {
+              const dateLabel = s.completedAt ?? s.startedAt ?? s.createdAt;
+              const source = s.caseType ? prettyLabel(s.caseType) : '—';
+              return (
+              <button
                 key={s.id}
-                href={`/app/?view=transcripts&case=${encodeURIComponent(s.id)}`}
-                className="block border border-[hsl(var(--border-faint))] hover:border-[hsl(var(--pulse))] px-3 py-2 transition"
+                type="button"
+                onClick={() => { navigateToTranscript(s.id); }}
+                className="block w-full border border-[hsl(var(--border-faint))] hover:border-[hsl(var(--pulse))] px-3 py-2 transition text-left"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -1095,10 +1106,12 @@ function DashboardView() {
                 <div className="mt-1 flex gap-3 text-2xs text-[hsl(var(--ink-mute))]">
                   <span>{s.turnCount} turns</span>
                   <span>{s.phase}</span>
-                  {s.completedAt ? <span>Completed at {new Date(s.completedAt).toLocaleDateString()}</span> : null}
+                  <span>{source}</span>
+                  {dateLabel ? <span>{new Date(dateLabel).toLocaleString()}</span> : null}
                 </div>
-              </a>
-            )) : (
+              </button>
+              );
+            }) : (
               <p className="text-xs text-[hsl(var(--ink-mute))]">{sessionsLoading ? 'Loading sessions...' : 'No sessions recorded yet.'}</p>
             )}
           </div>
@@ -1144,6 +1157,8 @@ function TranscriptsView() {
   const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'turns_desc' | 'turns_asc' | 'topic_asc'>('date_desc');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1198,6 +1213,14 @@ function TranscriptsView() {
     if (statusFilter !== 'all') {
       filtered = filtered.filter(r => r.status === statusFilter);
     }
+    if (dateFrom) {
+      const from = new Date(dateFrom).getTime();
+      filtered = filtered.filter(r => new Date(r.completedAt ?? r.createdAt).getTime() >= from);
+    }
+    if (dateTo) {
+      const to = new Date(dateTo + 'T23:59:59').getTime();
+      filtered = filtered.filter(r => new Date(r.completedAt ?? r.createdAt).getTime() <= to);
+    }
     filtered.sort((a, b) => {
       switch (sortBy) {
         case 'date_desc': return (b.completedAt ?? b.createdAt).localeCompare(a.completedAt ?? a.createdAt);
@@ -1239,6 +1262,16 @@ function TranscriptsView() {
               <option value="failed">Failed</option>
             </select>
           </div>
+          <div className="flex gap-2">
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+              className="flex-1 border border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-2 py-1.5 text-2xs text-[hsl(var(--ink))] uppercase"
+              aria-label="Date from"
+            />
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+              className="flex-1 border border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-2 py-1.5 text-2xs text-[hsl(var(--ink))] uppercase"
+              aria-label="Date to"
+            />
+          </div>
           <button type="submit" className="w-full border border-[hsl(var(--pulse))] bg-[hsl(var(--pulse)/0.1)] px-3 py-1.5 text-xs text-[hsl(var(--pulse))] hover:bg-[hsl(var(--pulse)/0.2)]">
             SEARCH
           </button>
@@ -1251,10 +1284,10 @@ function TranscriptsView() {
               key={result.id} type="button" onClick={() => selectTranscript(result.id)}
               className={cn('w-full border p-2 text-left transition hover:border-[hsl(var(--pulse))]', selectedTranscriptId === result.id ? 'border-[hsl(var(--pulse))] bg-[hsl(var(--panel-raised))]' : 'border-[hsl(var(--border-faint))]')}
             >
-              <p className="text-2xs uppercase tracking-[0.1em] text-[hsl(var(--ink-mute))]">{result.status} · {result.phase}</p>
+              <p className="text-2xs uppercase tracking-[0.1em] text-[hsl(var(--ink-mute))]">{result.status} · {result.phase}{result.caseType ? ` · ${result.caseType}` : ''}</p>
               <p className="text-xs font-semibold text-[hsl(var(--ink))] truncate">{result.topic}</p>
               <p className="text-2xs text-[hsl(var(--ink-dim))] line-clamp-1">{result.casePrompt ?? result.id}</p>
-              <p className="text-2xs text-[hsl(var(--caution))]">{result.turnCount} turns</p>
+              <p className="text-2xs text-[hsl(var(--caution))]">{result.turnCount} turns{result.completedAt ? ` · completed ${new Date(result.completedAt).toLocaleDateString()}` : result.startedAt ? ` · started ${new Date(result.startedAt).toLocaleDateString()}` : ''}</p>
             </button>
           )) : (
             <p className="text-2xs text-[hsl(var(--ink-mute))]">{submittedQuery ? 'No results.' : `Enter a query. ${sortedResults.length !== results.length ? 'Filter active.' : ''}`}</p>
@@ -1391,6 +1424,23 @@ function SubmitView() {
           <div className="flex items-center justify-between text-2xs uppercase tracking-[0.1em] text-[hsl(var(--ink-mute))]">
             <span>{prompt.trim().length}/500</span>
             <span>{usesTurnstile ? 'Turnstile · rate limited' : 'Nonce · rate limited'}</span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {[
+              'The accused replaced all jury chairs with whoopee cushions.',
+              'The defendant claims their cat wrote the confession letter.',
+              'A key witness insists they saw the suspect riding a unicycle.',
+              'The prosecutor alleges the evidence was swapped for candy.',
+              'The court stenographer was actually two raccoons in a trench coat.',
+            ].map((example) => (
+              <button
+                key={example} type="button"
+                onClick={() => setPrompt(example)}
+                className="border border-[hsl(var(--border-faint))] px-2 py-1 text-2xs text-[hsl(var(--ink-dim))] hover:border-[hsl(var(--pulse))] hover:text-[hsl(var(--ink))]"
+              >
+                {example}
+              </button>
+            ))}
           </div>
           {usesTurnstile ? <div ref={turnstileContainerRef} className="min-h-[65px]" /> : null}
           <button
