@@ -1,281 +1,183 @@
 import type { KeyboardEvent, ReactNode } from 'react';
-import type { CaseItem, JuryMember, TranscriptItem, VoteOption } from './data';
+import type { CaseItem, JuryMember, VoteOption } from './data';
 
+// ── Utility ──
 export function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(' ');
 }
 
-export function Surface({ className, children }: { className?: string; children: ReactNode }) {
+// ── Panel (console surface) ──
+export function ConsolePanel({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <div className={cn('rounded-xl border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface))] shadow-[8px_8px_0_hsl(var(--shadow))]', className)}>
+    <div className={cn('border border-[hsl(var(--border-faint))] bg-[hsl(var(--panel))]', className)}>
       {children}
     </div>
   );
 }
 
-export function SectionLabel({ eyebrow, title, note }: { eyebrow: string; title: string; note?: string }) {
+// ── Section header (terminal-style) ──
+export function HudSection({ label, note }: { label: string; note?: string }) {
   return (
-    <div className="flex items-end justify-between gap-4">
-      <div>
-        <p className="font-monoish text-xs uppercase tracking-[0.28em] text-[hsl(var(--cyan))]">{eyebrow}</p>
-        <h2 className="mt-2 text-lg font-semibold text-[hsl(var(--text))] md:text-xl">{title}</h2>
-      </div>
-      {note ? <p className="max-w-md text-right text-xs text-[hsl(var(--muted))]">{note}</p> : null}
+    <div className="hud-section">
+      <span className="hud-section-label">{label}</span>
+      <span className="hud-section-line" />
+      {note ? <span className="text-2xs text-[hsl(var(--ink-mute))]">{note}</span> : null}
     </div>
   );
 }
 
-export function LivePill({ text = 'LIVE' }: { text?: string }) {
+// ── Status LED indicator ──
+export function StatusLed({ state }: { state: 'live' | 'sync' | 'ok' | 'warn' | 'dead' }) {
+  const map = { live: 'hud-led-live', sync: 'hud-led-sync', ok: 'hud-led-ok', warn: 'hud-led-warn', dead: '' };
+  return <span className={cn('hud-led', map[state])} aria-hidden="true" />;
+}
+
+// ── Badge ──
+export function HudBadge({ children, tone = 'ink-dim' }: { children: ReactNode; tone?: string }) {
   return (
-    <span className="inline-flex items-center gap-2 rounded-md border-2 border-[hsl(var(--red))] bg-[hsl(var(--surface-2))] px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-[hsl(var(--text))]">
-      <span className="size-2 rounded-full bg-[hsl(var(--red))] motion-safe:animate-pulse" aria-hidden="true" />
-      {text}
+    <span className="inline-flex items-center border px-1.5 py-0 text-2xs uppercase tracking-[0.12em]" style={{ borderColor: `hsl(var(--${tone}))`, color: `hsl(var(--${tone}))` }}>
+      {children}
     </span>
   );
 }
 
-export function StatChip({ label, value, tone = 'cyan' }: { label: string; value: string; tone?: 'cyan' | 'gold' | 'red' | 'purple' | 'green' }) {
-  const toneMap = {
-    cyan: 'text-[hsl(var(--cyan))]',
-    gold: 'text-[hsl(var(--gold))]',
-    red: 'text-[hsl(var(--red))]',
-    purple: 'text-[hsl(var(--purple))]',
-    green: 'text-[hsl(var(--green))]',
-  } as const;
-
+// ── Tab button ──
+export function TabButton({
+  active, label, note, onClick, controls, id, onKeyDown,
+}: {
+  active: boolean; label: string; note: string; onClick: () => void;
+  controls?: string; id?: string; onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void;
+}) {
   return (
-    <div className="rounded-lg border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-3 py-2">
-      <p className="text-xs uppercase tracking-[0.22em] text-[hsl(var(--muted))]">{label}</p>
-      <p className={cn('mt-1 font-monoish text-sm font-semibold', toneMap[tone])}>{value}</p>
+    <button
+      type="button" role="tab" id={id}
+      aria-selected={active} aria-controls={controls}
+      tabIndex={active ? 0 : -1}
+      onClick={onClick} onKeyDown={onKeyDown}
+      className={cn(
+        'border px-3 py-1.5 text-left transition duration-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--pulse))]',
+        active
+          ? 'border-[hsl(var(--pulse))] bg-[hsl(var(--panel-raised))]'
+          : 'border-[hsl(var(--border-faint))] bg-[hsl(var(--panel))] hover:border-[hsl(var(--pulse))] hover:bg-[hsl(var(--panel-raised))]',
+      )}
+    >
+      <p className="text-xs font-semibold text-[hsl(var(--ink))]">{label}</p>
+      <p className="text-2xs text-[hsl(var(--ink-dim))]">{note}</p>
+    </button>
+  );
+}
+
+// ── Row display (key: value) ──
+export function HudRow({ label, value, accent }: { label: string; value: string; accent?: string }) {
+  return (
+    <div className="hud-row">
+      <span className="hud-row-key">{label}</span>
+      <span className="hud-row-val" style={accent ? { color: `hsl(var(--${accent}))` } : undefined}>{value}</span>
     </div>
   );
 }
 
-export function TabButton({
-  active,
-  label,
-  note,
-  onClick,
-  controls,
-  id,
-  onKeyDown,
+// ── Transcript entry (for public transcript view) ──
+export function TranscriptRow({
+  speaker, role, dialogue, turnNumber, phase, alignRight, roleColor,
 }: {
-  active: boolean;
-  label: string;
-  note: string;
-  onClick: () => void;
-  controls?: string;
-  id?: string;
-  onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void;
+  speaker: string; role: string; dialogue: string; turnNumber: number; phase: string;
+  alignRight: boolean; roleColor: string;
 }) {
   return (
-    <button
-      type="button"
-      role="tab"
-      id={id}
-      aria-selected={active}
-      aria-controls={controls}
-      tabIndex={active ? 0 : -1}
-      onClick={onClick}
-      onKeyDown={onKeyDown}
-      className={cn(
-        'group rounded-lg border-2 px-3 py-2 text-left transition duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cyan))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--bg))]',
-        active
-          ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--surface-2))] shadow-[4px_4px_0_hsl(var(--shadow))]'
-          : 'border-[hsl(var(--border))] bg-[hsl(var(--surface))] hover:border-[hsl(var(--cyan))] hover:bg-[hsl(var(--surface-2))]',
-      )}
-    >
-      <p className="text-base font-semibold text-[hsl(var(--text))]">{label}</p>
-      <p className="mt-1 text-xs leading-tight text-[hsl(var(--muted))]">{note}</p>
-    </button>
-  );
-}
-
-export function TranscriptLog({ items }: { items: TranscriptItem[] }) {
-  const toneClass: Record<TranscriptItem['tone'], string> = {
-    accent: 'border-l-[hsl(var(--cyan))]',
-    neutral: 'border-l-[hsl(var(--gold))]',
-    success: 'border-l-[hsl(var(--green))]',
-    warning: 'border-l-[hsl(var(--red))]',
-  };
-
-  return (
-    <section className="space-y-3">
-      <SectionLabel
-        eyebrow="Aria-live transcript"
-        title="Text-first courtroom feed"
-        note="Readable even without audio. Latest entries are announced politely for assistive tech."
-      />
-      <div role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false" className="max-h-[720px] space-y-3 overflow-auto pr-1">
-        {items.map((item) => (
-          <article
-            key={`${item.time}-${item.speaker}`}
-            className={cn('border-l-4 px-4 py-3 transition hover:bg-[hsl(var(--surface-2))]', toneClass[item.tone])}
-          >
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="font-monoish text-[hsl(var(--cyan))]">{item.time}</span>
-              <span className="rounded-full border border-[hsl(var(--border))] px-2 py-0.5 text-[hsl(var(--muted))]">{item.role}</span>
-              <span className="font-semibold text-[hsl(var(--text))]">{item.speaker}</span>
-            </div>
-            <p className="mt-2 text-base leading-7 text-[hsl(var(--text))]">{item.text}</p>
-          </article>
-        ))}
+    <article className={cn('flex w-full py-1', alignRight ? 'justify-end text-right' : 'justify-start text-left')}>
+      <div className={cn('max-w-[88%] border-l-2 pl-3', alignRight && 'border-l-0 border-r-2 pl-0 pr-3')} style={{ borderColor: roleColor }}>
+        <p className="text-xs font-semibold" style={{ color: roleColor }}>
+          [{role.slice(0, 5).toUpperCase()}]{' '}
+          <span className="text-[hsl(var(--ink))]">{speaker}</span>
+        </p>
+        <p className="text-2xs uppercase tracking-[0.1em] text-[hsl(var(--ink-mute))] mt-0.5">
+          #{turnNumber} · {phase}
+        </p>
+        <p className="mt-1 text-sm leading-relaxed text-[hsl(var(--ink-dim))]">{dialogue}</p>
       </div>
-    </section>
+    </article>
   );
 }
 
-export function PhaseRail({ phases }: { phases: Array<{ step: string; note: string; state: string }> }) {
-  return (
-    <Surface className="p-5">
-      <SectionLabel eyebrow="Phase rail" title="Courtroom state" note="At-a-glance timeline; active phase is emphasized with text, not just color." />
-      <div className="mt-5 space-y-4">
-        {phases.map((phase, index) => (
-          <div key={phase.step} className="flex gap-4">
-            <div className="flex flex-col items-center">
-              <span
-                className={cn(
-                  'mt-1 size-3 rounded-full border',
-                  phase.state === 'active'
-                    ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--cyan))]'
-                    : phase.state === 'complete'
-                      ? 'border-[hsl(var(--green))] bg-[hsl(var(--green))]'
-                      : 'border-[hsl(var(--border))] bg-[hsl(var(--surface-2))]',
-                )}
-                aria-hidden="true"
-              />
-              {index < phases.length - 1 ? <span className="mt-2 h-full w-px bg-[hsl(var(--border))]" aria-hidden="true" /> : null}
-            </div>
-            <div className="pb-5">
-              <p className="text-sm font-semibold text-[hsl(var(--text))]">{phase.step}</p>
-              <p className="mt-1 text-sm text-[hsl(var(--muted))]">{phase.note}</p>
-              <p className="mt-2 font-monoish text-xs uppercase tracking-[0.22em] text-[hsl(var(--muted))]">{phase.state}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </Surface>
-  );
-}
-
-export function JuryGrid({ jurors }: { jurors: JuryMember[] }) {
-  const tone = (status: JuryMember['status']) => {
-    if (status === 'Steady') return 'bg-[hsl(var(--green))]';
-    if (status === 'Split') return 'bg-[hsl(var(--gold))]';
-    if (status === 'Cautious') return 'bg-[hsl(var(--cyan))]';
-    if (status === 'Excused') return 'bg-[hsl(var(--red))]';
-    return 'bg-[hsl(var(--purple))]';
-  };
-
-  return (
-    <Surface className="p-5">
-      <SectionLabel eyebrow="Jury panel" title="Dot matrix + readable status" note="Each juror has a label and text status so meaning survives low color contrast." />
-      <div className="mt-5 grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-3">
-        {jurors.map((juror) => (
-          <div
-            key={juror.id}
-            role="group"
-            className="rounded-lg border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-3"
-            aria-label={`${juror.label} ${juror.status} ${juror.note}`}
-          >
-            <div className="flex items-center gap-3">
-              <span className={cn('size-3 rounded-full', tone(juror.status))} aria-hidden="true" />
-              <span className="font-monoish text-sm font-semibold text-[hsl(var(--text))]">{juror.label}</span>
-            </div>
-            <p className="mt-2 text-xs uppercase tracking-[0.24em] text-[hsl(var(--muted))]">{juror.status}</p>
-            <p className="mt-1 text-xs leading-5 text-[hsl(var(--muted))]">{juror.note}</p>
-          </div>
-        ))}
-      </div>
-    </Surface>
-  );
-}
-
-export function EvidenceList({ items, compact = false }: { items: Array<{ id: string; label: string; type: string; source: string; confidence: string; summary: string; badge: string }>; compact?: boolean }) {
-  return (
-    <Surface className="p-5">
-      <SectionLabel eyebrow="Evidence" title="Admissible materials" note="Cards stay short and scannable; the useful detail is always the first line." />
-      <div className={cn('mt-5 space-y-3', compact && 'space-y-2')}>
-        {items.map((item) => (
-          <article key={item.id} className={cn('rounded-lg border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-4', compact && 'p-3')}>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-semibold text-[hsl(var(--text))]">{item.label}</p>
-                <p className="mt-1 text-xs text-[hsl(var(--muted))]">{item.type} · {item.source}</p>
-              </div>
-              <span className="rounded-md border-2 border-[hsl(var(--border))] px-2 py-1 text-xs uppercase tracking-[0.18em] text-[hsl(var(--gold))]">{item.badge}</span>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-[hsl(var(--text))]">{item.summary}</p>
-            <p className="mt-3 font-monoish text-xs uppercase tracking-[0.2em] text-[hsl(var(--muted))]">{item.confidence}</p>
-          </article>
-        ))}
-      </div>
-    </Surface>
-  );
-}
-
+// ── Case card ──
 export function CaseCard({ item, active, onClick }: { item: CaseItem; active: boolean; onClick: () => void }) {
   return (
     <button
-      type="button"
-      onClick={onClick}
+      type="button" onClick={onClick}
       className={cn(
-        'w-full rounded-xl border-2 p-4 text-left transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cyan))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--bg))]',
+        'w-full border p-3 text-left transition duration-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--pulse))]',
         active
-          ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--surface-2))] shadow-[4px_4px_0_hsl(var(--shadow))]'
-          : 'border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.7)] hover:border-[hsl(var(--border)/1)] hover:bg-[hsl(var(--surface-2)/0.84)]',
+          ? 'border-[hsl(var(--pulse))] bg-[hsl(var(--panel-raised))]'
+          : 'border-[hsl(var(--border-faint))] bg-[hsl(var(--panel))] hover:border-[hsl(var(--pulse))]',
       )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="font-monoish text-xs uppercase tracking-[0.24em] text-[hsl(var(--cyan))]">{item.docket}</p>
-          <h3 className="mt-2 text-lg font-semibold text-[hsl(var(--text))]">{item.title}</h3>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-2xs uppercase tracking-[0.15em] text-[hsl(var(--signal))]">{item.docket}</p>
+          <p className="text-sm font-semibold text-[hsl(var(--ink))] truncate">{item.title}</p>
         </div>
-        <span className="rounded-md border-2 border-[hsl(var(--border))] px-2 py-1 text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted))]">{item.risk}</span>
+        <HudBadge tone={item.risk === 'Elevated' ? 'alert' : item.risk === 'Moderate' ? 'caution' : 'ink-mute'}>{item.risk}</HudBadge>
       </div>
-      <p className="mt-3 text-sm text-[hsl(var(--muted))]">{item.summary}</p>
-      <div className="mt-4 flex flex-wrap gap-2">
+      <p className="mt-2 text-xs text-[hsl(var(--ink-dim))] line-clamp-2">{item.summary}</p>
+      <div className="mt-3 flex flex-wrap gap-1.5">
         {item.tags.map((tag) => (
-          <span key={tag} className="rounded-md border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-2 py-1 text-xs uppercase tracking-[0.18em] text-[hsl(var(--text))]">{tag}</span>
+          <HudBadge key={tag}>{tag}</HudBadge>
         ))}
       </div>
     </button>
   );
 }
 
+// ── Evidence item ──
+export function EvidenceRow({ item }: { item: { id: string; label: string; type: string; source: string; confidence: string; summary: string; badge: string } }) {
+  return (
+    <div className="border border-[hsl(var(--border-faint))] bg-[hsl(var(--panel))] p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold text-[hsl(var(--ink))]">{item.label}</p>
+          <p className="text-2xs text-[hsl(var(--ink-dim))]">{item.type} · {item.source}</p>
+        </div>
+        <HudBadge tone="caution">{item.badge}</HudBadge>
+      </div>
+      <p className="mt-2 text-xs text-[hsl(var(--ink-dim))]">{item.summary}</p>
+      <p className="mt-2 text-2xs uppercase tracking-[0.1em] text-[hsl(var(--ink-mute))]">{item.confidence}</p>
+    </div>
+  );
+}
+
+// ── Vote card ──
 export function VoteCard({ option }: { option: VoteOption }) {
   return (
     <button
-      type="button"
-      disabled={option.disabled}
+      type="button" disabled={option.disabled}
       className={cn(
-        'w-full rounded-xl border-2 p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cyan))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--bg))]',
+        'w-full border p-3 text-left transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--pulse))]',
         option.disabled
-          ? 'cursor-not-allowed border-[hsl(var(--border))] bg-[hsl(var(--surface))] opacity-70'
-          : 'border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.72)] hover:border-[hsl(var(--cyan)/0.35)] hover:bg-[hsl(var(--surface-2)/0.9)]',
+          ? 'cursor-not-allowed border-[hsl(var(--border-faint))] opacity-60'
+          : 'border-[hsl(var(--border-faint))] bg-[hsl(var(--panel))] hover:border-[hsl(var(--pulse))]',
       )}
       aria-describedby={`${option.label.replace(/\s+/g, '-').toLowerCase()}-reason`}
     >
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-sm font-semibold text-[hsl(var(--text))]">{option.label}</p>
-        <span className={cn('rounded-md border-2 px-2 py-1 text-xs uppercase tracking-[0.18em]', option.disabled ? 'border-[hsl(var(--red))] text-[hsl(var(--red))]' : 'border-[hsl(var(--green))] text-[hsl(var(--green))]')}>
-          {option.disabled ? 'Unavailable' : 'Available'}
-        </span>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold text-[hsl(var(--ink))]">{option.label}</p>
+        <HudBadge tone={option.disabled ? 'alert' : 'confirm'}>{option.disabled ? 'UNAVAILABLE' : 'AVAILABLE'}</HudBadge>
       </div>
-      <p id={`${option.label.replace(/\s+/g, '-').toLowerCase()}-reason`} className="mt-3 text-sm leading-6 text-[hsl(var(--muted))]">
-        {option.reason}
-      </p>
-      <p className="mt-3 text-xs leading-5 text-[hsl(var(--text))]">{option.note}</p>
+      <p id={`${option.label.replace(/\s+/g, '-').toLowerCase()}-reason`} className="mt-2 text-xs text-[hsl(var(--ink-dim))]">{option.reason}</p>
+      <p className="mt-1 text-2xs text-[hsl(var(--ink))]">{option.note}</p>
     </button>
   );
 }
 
-export function HealthCard({ label, value, note }: { label: string; value: string; note: string }) {
+// ── Jury member row ──
+export function JuryRow({ juror }: { juror: JuryMember }) {
+  const dotColor = juror.status === 'Steady' ? 'confirm' : juror.status === 'Split' ? 'caution' : juror.status === 'Cautious' ? 'pulse' : juror.status === 'Excused' ? 'alert' : 'signal';
   return (
-    <div className="rounded-lg border-2 border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-4">
-      <p className="text-xs uppercase tracking-[0.22em] text-[hsl(var(--muted))]">{label}</p>
-      <p className="mt-2 font-monoish text-lg font-semibold text-[hsl(var(--text))]">{value}</p>
-      <p className="mt-2 text-sm text-[hsl(var(--muted))]">{note}</p>
+    <div className="flex items-center gap-2 py-1 border-b border-[hsl(var(--border-faint)/0.4)] last:border-0">
+      <span className={cn('size-2', `bg-[hsl(var(--${dotColor}))]`)} aria-hidden="true" />
+      <span className="text-2xs text-[hsl(var(--ink-mute))] w-7">{juror.label}</span>
+      <span className="text-xs text-[hsl(var(--ink))] flex-1 truncate">{juror.status}</span>
+      <span className="text-2xs text-[hsl(var(--ink-dim))] hidden sm:inline">{juror.note}</span>
     </div>
   );
 }

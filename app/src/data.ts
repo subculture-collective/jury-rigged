@@ -1,11 +1,8 @@
 export type ViewKey =
-  | 'viewer'
+  | 'dashboard'
   | 'overlay'
-  | 'directory'
-  | 'details'
-  | 'prompt'
   | 'transcripts'
-  | 'voting'
+  | 'submit'
   | 'about';
 
 export type CaseItem = {
@@ -57,14 +54,11 @@ export type VoteOption = {
 };
 
 export const views: Array<{ key: ViewKey; label: string; note: string }> = [
-  { key: 'viewer', label: 'Live Viewer', note: 'Control room + transcript' },
-  { key: 'overlay', label: 'Broadcast Overlay', note: '16:9 live-session frame' },
-  { key: 'directory', label: 'Case Directory', note: 'Active docket list' },
-  { key: 'details', label: 'Case Details', note: 'Evidence + timeline' },
-  { key: 'prompt', label: 'Submit Prompt', note: 'Public queue + ETA' },
+  { key: 'dashboard', label: 'Dashboard', note: 'Command center + live data' },
+  { key: 'overlay', label: 'Overlay', note: '16:9 broadcast frame' },
   { key: 'transcripts', label: 'Transcripts', note: 'Search public case records' },
-  { key: 'voting', label: 'Jury Voting', note: 'Ballot + eligibility' },
-  { key: 'about', label: 'About / How It Works', note: 'Workflow explainer' },
+  { key: 'submit', label: 'Submit Prompt', note: 'Public queue + ETA' },
+  { key: 'about', label: 'About', note: 'How the system works' },
 ];
 
 export const cases: CaseItem[] = [
