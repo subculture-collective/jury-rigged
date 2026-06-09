@@ -1,25 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import {
-  cases,
-  detailTabs,
-  evidence,
   howItWorks,
   liveMeta,
-  voteOptions,
   views,
   type ViewKey,
 } from './data';
 import {
-  CaseCard,
-  EvidenceRow,
-  JuryRow,
   TabButton,
   ConsolePanel,
   HudSection,
-  HudBadge,
   HudRow,
   TranscriptRow,
-  VoteCard,
   cn,
   StatusLed,
 } from './components';
@@ -956,119 +947,184 @@ function App() {
   if (activeView === 'overlay') return <OverlayView />;
 
   return (
-    <div className="grid min-h-screen place-items-center overflow-hidden bg-[hsl(var(--void))] text-[hsl(var(--ink))] font-body">
-      <div className="overlay-safe flex aspect-video w-screen max-w-[calc(100vh*16/9)] flex-col gap-4 overflow-auto border border-[hsl(var(--border-faint))] hud-bracket">
-        <header className="border-b border-[hsl(var(--border-faint))] bg-[hsl(var(--panel))] px-4 py-3">
-          <div className="flex items-center gap-4">
-            <span className="text-sm font-bold text-[hsl(var(--signal))]">JURYRIGGED</span>
-            <span className="text-2xs text-[hsl(var(--ink-mute))]">v0.1</span>
-            <StatusLed state="sync" />
-            <span className="text-2xs text-[hsl(var(--ink-dim))]">{liveMeta.mode}</span>
-            <a href="/operator" className="ml-auto text-2xs text-[hsl(var(--pulse))] border border-[hsl(var(--pulse))] px-2 py-0.5 hover:bg-[hsl(var(--panel-raised))]">
-              ADMIN CONSOLE
-            </a>
-          </div>
-        </header>
+    <div className="min-h-screen bg-[hsl(var(--void))] text-[hsl(var(--ink))] font-body">
+      <header className="sticky top-0 z-20 border-b border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-4 py-3">
+        <div className="max-w-7xl mx-auto flex items-center gap-4">
+          <span className="text-sm font-bold text-[hsl(var(--signal))]">JURYRIGGED</span>
+          <span className="text-2xs text-[hsl(var(--ink-mute))]">v0.1</span>
+          <StatusLed state="sync" />
+          <span className="text-2xs text-[hsl(var(--ink-dim))]">{liveMeta.mode}</span>
+          <nav className="ml-auto flex gap-1" aria-label="View navigation" role="tablist">
+            {navigableViews.map((view) => (
+              <TabButton
+                key={view.key}
+                active={activeView === view.key}
+                label={view.label}
+                note={view.note}
+                id={`view-tab-${view.key}`}
+                controls={`view-panel-${view.key}`}
+                onKeyDown={(event) => handleViewKeyDown(event, view.key)}
+                onClick={() => setView(view.key)}
+              />
+            ))}
+          </nav>
+          <a href="/operator" className="text-2xs text-[hsl(var(--pulse))] border border-[hsl(var(--pulse))] px-2 py-0.5 hover:bg-[hsl(var(--panel-raised))] ml-2">
+            ADMIN
+          </a>
+        </div>
+      </header>
 
-        <nav className="px-4 flex gap-2" aria-label="View navigation" role="tablist">
-          {navigableViews.map((view) => (
-            <TabButton
-              key={view.key}
-              active={activeView === view.key}
-              label={view.label}
-              note={view.note}
-              id={`view-tab-${view.key}`}
-              controls={`view-panel-${view.key}`}
-              onKeyDown={(event) => handleViewKeyDown(event, view.key)}
-              onClick={() => setView(view.key)}
-            />
-          ))}
-        </nav>
-
-        <main className="flex-1 px-4 pb-4">
-          <section id="view-panel-dashboard" role="tabpanel" aria-labelledby="view-tab-dashboard" hidden={activeView !== 'dashboard'}>
-            <DashboardView />
-          </section>
-          <section id="view-panel-transcripts" role="tabpanel" aria-labelledby="view-tab-transcripts" hidden={activeView !== 'transcripts'}>
-            <TranscriptsView />
-          </section>
-          <section id="view-panel-submit" role="tabpanel" aria-labelledby="view-tab-submit" hidden={activeView !== 'submit'}>
-            <SubmitView />
-          </section>
-          <section id="view-panel-about" role="tabpanel" aria-labelledby="view-tab-about" hidden={activeView !== 'about'}>
-            <AboutView />
-          </section>
-        </main>
-      </div>
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        <section id="view-panel-dashboard" role="tabpanel" aria-labelledby="view-tab-dashboard" hidden={activeView !== 'dashboard'}>
+          <DashboardView />
+        </section>
+        <section id="view-panel-transcripts" role="tabpanel" aria-labelledby="view-tab-transcripts" hidden={activeView !== 'transcripts'}>
+          <TranscriptsView />
+        </section>
+        <section id="view-panel-submit" role="tabpanel" aria-labelledby="view-tab-submit" hidden={activeView !== 'submit'}>
+          <SubmitView />
+        </section>
+        <section id="view-panel-about" role="tabpanel" aria-labelledby="view-tab-about" hidden={activeView !== 'about'}>
+          <AboutView />
+        </section>
+      </main>
     </div>
   );
 }
 
 // ══════════════════════════════════════════════
-// DASHBOARD VIEW
+// DASHBOARD VIEW — live data from API
 // ══════════════════════════════════════════════
 function DashboardView() {
-  const { snapshot: caseQueue, error: caseQueueError } = useCaseQueue();
+  const { snapshot: caseQueue } = useCaseQueue();
   const { social } = useTwitchSocial();
+  const [sessions, setSessions] = useState<TranscriptSearchResult[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const now = useNowTick(30_000);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    (async () => {
+      setSessionsLoading(true);
+      try {
+        const response = await fetch('/api/court/sessions', { signal: controller.signal });
+        if (!response.ok) throw new Error(`Unexpected status ${response.status}`);
+        const payload = await response.json() as { sessions?: unknown };
+        const list = Array.isArray(payload.sessions) ? payload.sessions : [];
+        const mapped: TranscriptSearchResult[] = [];
+        for (const s of list) {
+          if (!isRecord(s)) continue;
+          const id = readString(s.id) ?? readString(s.sessionId);
+          if (!id) continue;
+          mapped.push({
+            id,
+            topic: readString(s.topic) ?? id,
+            status: readString(s.status) ?? 'unknown',
+            phase: readString(s.phase) ?? '',
+            caseType: readString(s.caseType),
+            casePrompt: readString((s.metadata as ApiRecord | undefined)?.casePrompt ?? s.casePrompt),
+            createdAt: readString(s.createdAt) ?? '',
+            startedAt: readString(s.startedAt),
+            completedAt: readString(s.completedAt),
+            turnCount: readNumber(s.turnCount) ?? 0,
+          });
+        }
+        setSessions(mapped);
+      } catch { /* silent, keep previous data */ }
+      finally { if (!controller.signal.aborted) setSessionsLoading(false); }
+    })();
+    return () => controller.abort();
+  }, [now]);
+
+  const running = sessions.find(s => s.status === 'running');
+  const recent = sessions.filter(s => s.status !== 'running').slice(0, 10);
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[1fr_280px]">
-      <div className="space-y-4">
-        <ConsolePanel className="p-4">
-          <HudSection label="Active docket" note={caseQueueError ?? ''} />
-          <div className="space-y-2">
-            {cases.map((item) => (
-              <CaseCard key={item.id} item={item} active={false} onClick={() => {}} />
-            ))}
-          </div>
-        </ConsolePanel>
-
-        <ConsolePanel className="p-4">
-          <HudSection label="Evidence inventory" />
-          <div className="space-y-2">
-            {evidence.map((item) => <EvidenceRow key={item.id} item={item} />)}
-          </div>
-        </ConsolePanel>
-
-        <ConsolePanel className="p-4">
-          <HudSection label="Voting slate" />
-          <div className="space-y-2">
-            {voteOptions.map((option) => <VoteCard key={option.label} option={option} />)}
-          </div>
-        </ConsolePanel>
-      </div>
-
-      <div className="space-y-4">
-        <ConsolePanel className="p-4">
-          <HudSection label="System status" />
-          <div className="space-y-0.5">
-            <HudRow label="Courtroom" value={liveMeta.courtroom} />
-            <HudRow label="Signal" value={liveMeta.signal} accent="confirm" />
-            <HudRow label="Uptime" value={liveMeta.uptime} accent="caution" />
-            <HudRow label="Queue" value={caseQueue ? `${caseQueue.queuedCount} waiting` : '—'} />
-          </div>
-        </ConsolePanel>
-
-        <ConsolePanel className="p-4">
-          <HudSection label="Twitch signals" note="Live" />
-          <div className="space-y-2">
-            {social.latestFollower ? <HudRow label="Follow" value={social.latestFollower.displayName} /> : <p className="text-2xs text-[hsl(var(--ink-mute))]">No signals yet</p>}
-            {social.latestSubscriber ? <HudRow label="Sub" value={`${social.latestSubscriber.displayName}${social.latestSubscriber.tier ? ` T${social.latestSubscriber.tier}` : ''}`} /> : null}
-            {social.mostGifted ? <HudRow label="Top Gift" value={`${social.mostGifted.displayName} (${social.mostGifted.giftCount})`} accent="caution" /> : null}
-          </div>
-        </ConsolePanel>
-
-        <ConsolePanel className="p-4">
-          <HudSection label="Case details" />
-          <div className="space-y-2">
-            {detailTabs.map((tab) => (
-              <div key={tab.label} className="text-2xs">
-                <span className="text-[hsl(var(--ink))] font-semibold">{tab.label}:</span>{' '}
-                <span className="text-[hsl(var(--ink-dim))]">{tab.detail}</span>
+    <div className="space-y-6">
+      {/* LIVE SESSION — prominent callout */}
+      {running ? (
+        <ConsolePanel className="p-5 border-[hsl(var(--pulse))]">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <HudSection label={`LIVE COURT · ${prettyLabel(running.phase)}`} note={running.status.toUpperCase()} />
+              <p className="mt-2 text-xl font-bold text-[hsl(var(--ink))]">{running.topic}</p>
+              <p className="mt-1 text-sm text-[hsl(var(--ink-dim))] line-clamp-2">{running.casePrompt}</p>
+              <div className="mt-3 flex flex-wrap gap-4 text-2xs">
+                <HudRow label="Turns" value={String(running.turnCount)} />
+                <HudRow label="Started" value={running.startedAt ? formatDuration(running.startedAt, Date.now()) : '—'} accent="caution" />
+                <HudRow label="Queue" value={caseQueue ? `${caseQueue.queuedCount} waiting` : '—'} />
               </div>
-            ))}
+            </div>
+            <div className="flex flex-col gap-2 shrink-0">
+              <a href="/app/?view=overlay" className="border border-[hsl(var(--pulse))] px-3 py-1.5 text-xs text-[hsl(var(--pulse))] text-center hover:bg-[hsl(var(--pulse)/0.1)]">WATCH OVERLAY</a>
+              <a href={`/app/?view=transcripts&case=${encodeURIComponent(running.id)}`} className="border border-[hsl(var(--signal))] px-3 py-1.5 text-xs text-[hsl(var(--signal))] text-center hover:bg-[hsl(var(--signal)/0.1)]">VIEW TRANSCRIPT</a>
+            </div>
           </div>
         </ConsolePanel>
+      ) : (
+        <ConsolePanel className="p-5">
+          <HudSection label="No active session" note={sessionsLoading ? 'Loading...' : 'Idle'} />
+          <p className="mt-2 text-sm text-[hsl(var(--ink-dim))]">
+            No courtroom session is currently running. Start one from the admin console or submit a prompt to the queue.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-3">
+            <a href="/app/?view=submit" className="border border-[hsl(var(--pulse))] px-3 py-1.5 text-xs text-[hsl(var(--pulse))] hover:bg-[hsl(var(--pulse)/0.1)]">SUBMIT PROMPT</a>
+            <a href="/operator" className="border border-[hsl(var(--signal))] px-3 py-1.5 text-xs text-[hsl(var(--signal))] hover:bg-[hsl(var(--signal)/0.1)]">ADMIN CONSOLE</a>
+          </div>
+        </ConsolePanel>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Recent sessions */}
+        <ConsolePanel className="lg:col-span-2 p-4">
+          <HudSection label={`Recent sessions · ${sessions.length} total`} note={sessionsLoading ? 'Loading...' : ''} />
+          <div className="mt-3 space-y-1">
+            {recent.length > 0 ? recent.map((s) => (
+              <a
+                key={s.id}
+                href={`/app/?view=transcripts&case=${encodeURIComponent(s.id)}`}
+                className="block border border-[hsl(var(--border-faint))] hover:border-[hsl(var(--pulse))] px-3 py-2 transition"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-[hsl(var(--ink))] truncate">{s.topic}</p>
+                    <p className="text-2xs text-[hsl(var(--ink-dim))] line-clamp-1">{s.casePrompt ?? s.id}</p>
+                  </div>
+                  <span className="text-2xs uppercase tracking-[0.1em] text-[hsl(var(--ink-mute))] shrink-0">{s.status}</span>
+                </div>
+                <div className="mt-1 flex gap-3 text-2xs text-[hsl(var(--ink-mute))]">
+                  <span>{s.turnCount} turns</span>
+                  <span>{s.phase}</span>
+                  {s.completedAt ? <span>Completed at {new Date(s.completedAt).toLocaleDateString()}</span> : null}
+                </div>
+              </a>
+            )) : (
+              <p className="text-xs text-[hsl(var(--ink-mute))]">{sessionsLoading ? 'Loading sessions...' : 'No sessions recorded yet.'}</p>
+            )}
+          </div>
+        </ConsolePanel>
+
+        {/* Sidebar */}
+        <div className="space-y-4">
+          <ConsolePanel className="p-4">
+            <HudSection label="System" />
+            <div className="space-y-0.5 mt-2">
+              <HudRow label="API" value="Online" accent="confirm" />
+              <HudRow label="Queue" value={caseQueue ? `${caseQueue.queuedCount} waiting` : '—'} accent={caseQueue && caseQueue.queuedCount > 0 ? 'caution' : undefined} />
+              <HudRow label="Auto-gen" value={caseQueue?.automationEnabled ? 'ON' : 'OFF'} accent={caseQueue?.automationEnabled ? 'pulse' : undefined} />
+              <HudRow label="Fallback" value={caseQueue?.generatedFallback ? 'Active' : 'Inactive'} />
+            </div>
+          </ConsolePanel>
+
+          <ConsolePanel className="p-4">
+            <HudSection label="Signals" note="Twitch" />
+            <div className="space-y-1 mt-2">
+              {social.latestFollower ? <HudRow label="Follow" value={social.latestFollower.displayName} /> : <p className="text-2xs text-[hsl(var(--ink-mute))]">No signals yet</p>}
+              {social.latestSubscriber ? <HudRow label="Sub" value={`${social.latestSubscriber.displayName}${social.latestSubscriber.tier ? ` T${social.latestSubscriber.tier}` : ''}`} /> : null}
+              {social.mostGifted ? <HudRow label="Top Gift" value={`${social.mostGifted.displayName} (${social.mostGifted.giftCount})`} accent="caution" /> : null}
+            </div>
+          </ConsolePanel>
+        </div>
       </div>
     </div>
   );
@@ -1086,6 +1142,8 @@ function TranscriptsView() {
   const [searchLoading, setSearchLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'turns_desc' | 'turns_asc' | 'topic_asc'>('date_desc');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1134,6 +1192,25 @@ function TranscriptsView() {
 
   const detailTurns = useMemo(() => selectedSession?.turns ?? [], [selectedSession]);
 
+  // Sort + filter results client-side
+  const sortedResults = useMemo(() => {
+    let filtered = [...results];
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(r => r.status === statusFilter);
+    }
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'date_desc': return (b.completedAt ?? b.createdAt).localeCompare(a.completedAt ?? a.createdAt);
+        case 'date_asc':  return (a.createdAt).localeCompare(b.createdAt);
+        case 'turns_desc':return b.turnCount - a.turnCount;
+        case 'turns_asc': return a.turnCount - b.turnCount;
+        case 'topic_asc': return a.topic.localeCompare(b.topic);
+        default:          return 0;
+      }
+    });
+    return filtered;
+  }, [results, sortBy, statusFilter]);
+
   return (
     <div className="grid gap-4 xl:grid-cols-[320px_1fr]">
       <ConsolePanel className="p-4 flex flex-col min-h-0">
@@ -1144,6 +1221,24 @@ function TranscriptsView() {
             placeholder="Search by topic or prompt..."
             className="w-full border border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-3 py-1.5 text-xs text-[hsl(var(--ink))] outline-none placeholder:text-[hsl(var(--ink-mute))] focus:border-[hsl(var(--pulse))]"
           />
+          <div className="flex gap-2">
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+              className="flex-1 border border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-2 py-1.5 text-2xs text-[hsl(var(--ink))] uppercase">
+              <option value="date_desc">Newest</option>
+              <option value="date_asc">Oldest</option>
+              <option value="turns_desc">Most turns</option>
+              <option value="turns_asc">Fewest turns</option>
+              <option value="topic_asc">Topic A-Z</option>
+            </select>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+              className="flex-1 border border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-2 py-1.5 text-2xs text-[hsl(var(--ink))] uppercase">
+              <option value="all">All</option>
+              <option value="completed">Completed</option>
+              <option value="running">Running</option>
+              <option value="pending">Pending</option>
+              <option value="failed">Failed</option>
+            </select>
+          </div>
           <button type="submit" className="w-full border border-[hsl(var(--pulse))] bg-[hsl(var(--pulse)/0.1)] px-3 py-1.5 text-xs text-[hsl(var(--pulse))] hover:bg-[hsl(var(--pulse)/0.2)]">
             SEARCH
           </button>
@@ -1151,7 +1246,7 @@ function TranscriptsView() {
         <div className="mt-3 flex-1 overflow-y-auto space-y-1">
           {searchLoading ? (
             <p className="text-2xs text-[hsl(var(--ink-mute))]">Scanning...</p>
-          ) : results.length > 0 ? results.map((result) => (
+          ) : sortedResults.length > 0 ? sortedResults.map((result) => (
             <button
               key={result.id} type="button" onClick={() => selectTranscript(result.id)}
               className={cn('w-full border p-2 text-left transition hover:border-[hsl(var(--pulse))]', selectedTranscriptId === result.id ? 'border-[hsl(var(--pulse))] bg-[hsl(var(--panel-raised))]' : 'border-[hsl(var(--border-faint))]')}
@@ -1162,7 +1257,7 @@ function TranscriptsView() {
               <p className="text-2xs text-[hsl(var(--caution))]">{result.turnCount} turns</p>
             </button>
           )) : (
-            <p className="text-2xs text-[hsl(var(--ink-mute))]">{submittedQuery ? 'No results found.' : 'Enter a query to search public transcripts.'}</p>
+            <p className="text-2xs text-[hsl(var(--ink-mute))]">{submittedQuery ? 'No results.' : `Enter a query. ${sortedResults.length !== results.length ? 'Filter active.' : ''}`}</p>
           )}
         </div>
         {error ? <p className="mt-2 text-2xs text-[hsl(var(--alert))]">{error}</p> : null}
