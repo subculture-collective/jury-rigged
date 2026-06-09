@@ -23,6 +23,13 @@ import {
   cn,
   StatusLed,
 } from './components';
+import { useSceneRunner } from './scene/runner';
+import { useCourtStage } from './scene/useCourtStage';
+import { CourtStage } from './scene/Stage';
+import { DialogueBox } from './scene/DialogueBox';
+import { FXOverlay } from './scene/FXOverlay';
+import { OPENING_SCENE } from './scene/scripts/opening';
+import type { SceneEvent } from './scene/types';
 
 type ApiRecord = Record<string, unknown>;
 
@@ -717,6 +724,28 @@ function OverlayView() {
   const { social, error: socialError } = useTwitchSocial(lastEvent);
   const [stinger, setStinger] = useState<OverlayStinger | null>(null);
   const { snapshot: queueSnapshot } = useCaseQueue();
+  const sceneRunner = useSceneRunner();
+  const courtStage = useCourtStage();
+  const [sceneMode, setSceneMode] = useState(false);
+
+  // Feed scene events to the stage state
+  useEffect(() => {
+    if (sceneRunner.current) {
+      courtStage.applyEvent(sceneRunner.current);
+    }
+  }, [sceneRunner.current, courtStage]);
+
+  // Auto-activate scene mode when a render_directive with stinger arrives
+  useEffect(() => {
+    if (!lastEvent || lastEvent.type !== 'render_directive' || !isRecord(lastEvent.payload)) return;
+    const directive = lastEvent.payload as ApiRecord;
+    if (directive.stinger || directive.scene) {
+      setSceneMode(true);
+      if (directive.scene === 'opening') {
+        sceneRunner.loadScene(OPENING_SCENE);
+      }
+    }
+  }, [lastEvent, sceneRunner]);
 
   const transcriptTurns = useMemo(
     () => (session ? session.turns.slice(-OVERLAY_TRANSCRIPT_LIMIT) : []),
@@ -764,6 +793,25 @@ function OverlayView() {
           </div>
         ) : null}
 
+        {/* SCENE STAGE — background layer when scene mode is active */}
+        {sceneMode ? (
+          <div className="absolute inset-0 z-0">
+            <CourtStage state={courtStage.state} />
+          </div>
+        ) : null}
+
+        {/* DIALOGUE BOX — overlaid when scene runner has a 'say' event */}
+        {sceneMode && sceneRunner.current?.type === 'say' ? (
+          <DialogueBox
+            speaker={sceneRunner.current.speaker}
+            text={sceneRunner.current.text}
+            onAdvance={sceneRunner.advance}
+          />
+        ) : null}
+
+        {/* FX OVERLAY — flash/shake/stamp from scene events */}
+        {sceneMode ? <FXOverlay event={sceneRunner.current} /> : null}
+
         <div className="flex items-center gap-6 px-4 py-1.5 border-b border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] text-2xs uppercase tracking-[0.1em] text-[hsl(var(--ink-dim))]">
           <span className="text-[hsl(var(--signal))] font-semibold">JURYRIGGED</span>
           <StatusLed state={connectedLed as 'live' | 'sync'} />
@@ -775,6 +823,13 @@ function OverlayView() {
           <span>UPT:</span>
           <span className="text-[hsl(var(--signal))]">{runtime}</span>
           <span className="flex-1" />
+          <button
+            type="button"
+            onClick={() => { setSceneMode(!sceneMode); if (!sceneMode) { sceneRunner.loadScene(OPENING_SCENE); } else { sceneRunner.stop(); courtStage.reset(); } }}
+            className={cn('text-2xs uppercase tracking-[0.1em] border px-1.5 py-0.5', sceneMode ? 'border-[hsl(var(--signal))] text-[hsl(var(--signal))]' : 'border-[hsl(var(--border-faint))] text-[hsl(var(--ink-mute))]')}
+          >
+            SCENE
+          </button>
           <span>{liveStamp}</span>
           {error ? <span className="text-[hsl(var(--alert))] ml-3">· {error}</span> : null}
         </div>
