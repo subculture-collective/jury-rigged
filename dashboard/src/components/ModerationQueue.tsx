@@ -17,29 +17,15 @@ interface FlaggedItem {
 
 export function ModerationQueue({ events }: ModerationQueueProps) {
     const [queue, setQueue] = useState<FlaggedItem[]>([]);
-    const [filter, setFilter] = useState<
-        'all' | 'pending' | 'approved' | 'rejected'
-    >('pending');
+    const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
     const processedEventCountRef = useRef(0);
 
     const handleApprove = (id: string) => {
-        setQueue(prev =>
-            prev.map(item =>
-                item.id === id ?
-                    { ...item, status: 'approved' as const }
-                :   item,
-            ),
-        );
+        setQueue(prev => prev.map(item => (item.id === id ? { ...item, status: 'approved' as const } : item)));
     };
 
     const handleReject = (id: string) => {
-        setQueue(prev =>
-            prev.map(item =>
-                item.id === id ?
-                    { ...item, status: 'rejected' as const }
-                :   item,
-            ),
-        );
+        setQueue(prev => prev.map(item => (item.id === id ? { ...item, status: 'rejected' as const } : item)));
     };
 
     useEffect(() => {
@@ -68,32 +54,21 @@ export function ModerationQueue({ events }: ModerationQueueProps) {
                 const payload = event.payload as Record<string, unknown>;
 
                 if (event.type === 'moderation_action') {
-                    const reasons =
-                        Array.isArray(payload.reasons) ? payload.reasons : [];
+                    const reasons = Array.isArray(payload.reasons) ? payload.reasons : [];
                     additions.push({
                         id: event.id,
                         type: 'statement',
-                        content:
-                            'Content was flagged and redacted by courtroom moderation.',
-                        speaker:
-                            typeof payload.speaker === 'string' ?
-                                payload.speaker
-                            :   undefined,
+                        content: 'Content was flagged and redacted by courtroom moderation.',
+                        speaker: typeof payload.speaker === 'string' ? payload.speaker : undefined,
                         timestamp: event.at,
-                        reason:
-                            reasons.length > 0 ?
-                                reasons.map(String).join(', ')
-                            :   'policy_violation',
+                        reason: reasons.length > 0 ? reasons.map(String).join(', ') : 'policy_violation',
                         status: 'pending',
                     });
                     known.add(event.id);
                 }
 
                 if (event.type === 'vote_spam_blocked') {
-                    const reason =
-                        typeof payload.reason === 'string' ?
-                            payload.reason
-                        :   'vote_spam';
+                    const reason = typeof payload.reason === 'string' ? payload.reason : 'vote_spam';
                     additions.push({
                         id: event.id,
                         type: 'vote',
@@ -116,25 +91,12 @@ export function ModerationQueue({ events }: ModerationQueueProps) {
         let rejected = 0;
 
         for (const item of queue) {
-            if (item.status === 'pending') {
-                pending += 1;
-            }
-
-            if (item.status === 'approved') {
-                approved += 1;
-            }
-
-            if (item.status === 'rejected') {
-                rejected += 1;
-            }
+            if (item.status === 'pending') pending += 1;
+            if (item.status === 'approved') approved += 1;
+            if (item.status === 'rejected') rejected += 1;
         }
 
-        return {
-            total: queue.length,
-            pending,
-            approved,
-            rejected,
-        };
+        return { total: queue.length, pending, approved, rejected };
     }, [queue]);
 
     const filteredQueue = useMemo(
@@ -143,133 +105,94 @@ export function ModerationQueue({ events }: ModerationQueueProps) {
     );
 
     return (
-        <div className='space-y-6'>
-            {/* Stats */}
-            <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
-                <div className='bg-gray-800 rounded-lg p-4'>
-                    <div className='text-sm text-gray-400'>Total</div>
-                    <div className='text-2xl font-bold'>{queueStats.total}</div>
-                </div>
-                <div className='bg-yellow-900/30 border border-yellow-700 rounded-lg p-4'>
-                    <div className='text-sm text-gray-400'>Pending</div>
-                    <div className='text-2xl font-bold text-yellow-400'>
-                        {queueStats.pending}
-                    </div>
-                </div>
-                <div className='bg-green-900/30 border border-green-700 rounded-lg p-4'>
-                    <div className='text-sm text-gray-400'>Approved</div>
-                    <div className='text-2xl font-bold text-green-400'>
-                        {queueStats.approved}
-                    </div>
-                </div>
-                <div className='bg-red-900/30 border border-red-700 rounded-lg p-4'>
-                    <div className='text-sm text-gray-400'>Rejected</div>
-                    <div className='text-2xl font-bold text-red-400'>
-                        {queueStats.rejected}
-                    </div>
-                </div>
+        <section className='space-y-5'>
+            <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
+                <Metric label='Total' value={String(queueStats.total)} tone='cyan' />
+                <Metric label='Pending' value={String(queueStats.pending)} tone='gold' />
+                <Metric label='Approved' value={String(queueStats.approved)} tone='green' />
+                <Metric label='Rejected' value={String(queueStats.rejected)} tone='red' />
             </div>
 
-            {/* Filters */}
-            <div className='flex gap-2'>
-                {(['all', 'pending', 'approved', 'rejected'] as const).map(
-                    status => (
+            <div className='admin-panel p-5'>
+                <div className='flex flex-wrap gap-2'>
+                    {(['all', 'pending', 'approved', 'rejected'] as const).map(status => (
                         <button
                             key={status}
                             onClick={() => setFilter(status)}
-                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                                filter === status ?
-                                    'bg-primary-600 text-white'
-                                :   'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                            }`}
+                            data-active={filter === status}
+                            className='admin-button px-4 py-2 text-[0.68rem]'
                         >
                             {status.charAt(0).toUpperCase() + status.slice(1)}
                         </button>
-                    ),
-                )}
+                    ))}
+                </div>
             </div>
 
-            {/* Queue */}
-            <div className='bg-gray-800 rounded-lg shadow-lg'>
-                {filteredQueue.length === 0 ?
-                    <div className='p-8 text-center text-gray-400'>
-                        {filter === 'pending' ?
-                            'No pending items'
-                        :   `No ${filter} items`}
+            <div className='admin-panel-strong p-5'>
+                <div className='flex items-center justify-between gap-3'>
+                    <div>
+                        <p className='admin-kicker text-[hsl(var(--purple))]'>Moderation queue</p>
+                        <h2 className='admin-title mt-2 text-xl'>Flagged items and anti-spam blocks</h2>
                     </div>
-                :   <div className='divide-y divide-gray-700'>
-                        {filteredQueue.map(item => (
-                            <div
-                                key={item.id}
-                                className='p-4 hover:bg-gray-750 transition-colors'
-                            >
-                                <div className='flex items-start justify-between mb-2'>
-                                    <div className='flex-1'>
-                                        <div className='flex items-center gap-2 mb-1'>
-                                            <span
-                                                className={`px-2 py-1 rounded text-xs font-medium ${
-                                                    item.type === 'statement' ?
-                                                        'bg-blue-900/50 text-blue-300'
-                                                    :   'bg-purple-900/50 text-purple-300'
-                                                }`}
-                                            >
-                                                {item.type}
-                                            </span>
-                                            {item.speaker && (
-                                                <span className='text-sm text-gray-400'>
-                                                    by {item.speaker}
-                                                </span>
-                                            )}
-                                            <span className='text-xs text-gray-500'>
-                                                {new Date(
-                                                    item.timestamp,
-                                                ).toLocaleString()}
-                                            </span>
+                    <span className='admin-chip'>{filteredQueue.length} visible</span>
+                </div>
+
+                <div className='mt-5 space-y-3'>
+                    {filteredQueue.length === 0 ? (
+                        <div className='border border-[hsl(var(--border))] bg-black/10 p-5 text-sm text-[hsl(var(--muted))]'>
+                            {filter === 'pending' ? 'No pending items' : `No ${filter} items`}
+                        </div>
+                    ) : (
+                        filteredQueue.map(item => (
+                            <div key={item.id} className='border border-[hsl(var(--border))] bg-black/10 p-4'>
+                                <div className='flex flex-wrap items-start justify-between gap-3'>
+                                    <div className='min-w-0 flex-1'>
+                                        <div className='flex flex-wrap items-center gap-2'>
+                                            <span className='admin-chip'>{item.type}</span>
+                                            {item.speaker ? <span className='text-sm text-[hsl(var(--muted))]'>by {item.speaker}</span> : null}
+                                            <span className='text-xs text-[hsl(var(--muted))]'>{new Date(item.timestamp).toLocaleString()}</span>
                                         </div>
-                                        <p className='text-white mb-2'>
-                                            {item.content}
-                                        </p>
-                                        <p className='text-sm text-yellow-400'>
-                                            ⚠️ {item.reason}
-                                        </p>
+                                        <p className='mt-3 break-words text-sm leading-6 text-[hsl(var(--text))]'>{item.content}</p>
+                                        <p className='mt-2 text-sm text-[hsl(var(--gold))]'>⚠ {item.reason}</p>
                                     </div>
-                                    <div className='ml-4 flex gap-2'>
-                                        {item.status === 'pending' ?
+
+                                    <div className='flex gap-2'>
+                                        {item.status === 'pending' ? (
                                             <>
                                                 <button
-                                                    onClick={() =>
-                                                        handleApprove(item.id)
-                                                    }
-                                                    className='px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-medium transition-colors'
+                                                    onClick={() => handleApprove(item.id)}
+                                                    className='admin-button px-3 py-2 text-[0.64rem]'
                                                 >
-                                                    ✓ Approve
+                                                    Approve
                                                 </button>
                                                 <button
-                                                    onClick={() =>
-                                                        handleReject(item.id)
-                                                    }
-                                                    className='px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm font-medium transition-colors'
+                                                    onClick={() => handleReject(item.id)}
+                                                    className='admin-button admin-button-danger px-3 py-2 text-[0.64rem]'
                                                 >
-                                                    ✗ Reject
+                                                    Reject
                                                 </button>
                                             </>
-                                        :   <span
-                                                className={`px-3 py-1 rounded text-sm font-medium ${
-                                                    item.status === 'approved' ?
-                                                        'bg-green-900/50 text-green-300'
-                                                    :   'bg-red-900/50 text-red-300'
-                                                }`}
-                                            >
-                                                {item.status}
-                                            </span>
-                                        }
+                                        ) : (
+                                            <span className='admin-chip'>{item.status}</span>
+                                        )}
                                     </div>
                                 </div>
                             </div>
-                        ))}
-                    </div>
-                }
+                        ))
+                    )}
+                </div>
             </div>
+        </section>
+    );
+}
+
+function Metric({ label, value, tone }: { label: string; value: string; tone: 'cyan' | 'gold' | 'green' | 'red' }) {
+    return (
+        <div className='border border-[hsl(var(--border))] bg-black/10 p-4'>
+            <p className='text-xs uppercase tracking-[0.22em] text-[hsl(var(--muted))]'>{label}</p>
+            <p className='mt-2 text-2xl font-semibold' style={{ color: `hsl(var(--${tone}))` }}>
+                {value}
+            </p>
         </div>
     );
 }

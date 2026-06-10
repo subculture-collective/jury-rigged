@@ -1038,16 +1038,14 @@ function registerApiRoutes(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>JuryRigged Admin Login</title>
+  <title>JuryRigged Operator Login</title>
   <style>
-    :root { color-scheme: dark; --bg: 210 42% 7%; --surface: 212 38% 10%; --surface-2: 212 34% 14%; --border: 205 28% 23%; --text: 205 40% 92%; --muted: 207 18% 64%; --cyan: 190 92% 58%; --gold: 38 68% 60%; --purple: 260 75% 62%; }
+    :root { color-scheme: dark; --bg: 210 42% 7%; --surface: 212 38% 10%; --surface-2: 212 34% 14%; --border: 205 28% 23%; --text: 205 40% 92%; --muted: 207 18% 64%; --cyan: 190 92% 58%; --gold: 38 68% 60%; --purple: 260 75% 62%; --green: 145 64% 50%; --red: 3 89% 59%; }
     * { box-sizing: border-box; }
     html, body { min-height: 100%; }
     body {
       margin: 0;
-      display: grid;
-      place-items: center;
-      padding: 32px 20px;
+      padding: 24px;
       color: hsl(var(--text));
       font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif;
       background:
@@ -1055,6 +1053,7 @@ function registerApiRoutes(
         radial-gradient(circle at 85% 0%, hsl(var(--cyan) / 0.12), transparent 24%),
         radial-gradient(circle at 75% 80%, hsl(var(--gold) / 0.08), transparent 28%),
         linear-gradient(180deg, hsl(var(--bg)) 0%, hsl(211 41% 5%) 100%);
+      overflow-x: hidden;
     }
     body::before {
       content: '';
@@ -1066,29 +1065,42 @@ function registerApiRoutes(
       mix-blend-mode: soft-light;
       opacity: 0.1;
     }
+    a, button, input { font: inherit; }
+    a:focus-visible, button:focus-visible, input:focus-visible { outline: 1px solid hsl(var(--cyan)); outline-offset: 2px; }
+    .page {
+      max-width: 1120px;
+      margin: 0 auto;
+      min-height: calc(100vh - 48px);
+      display: grid;
+      align-items: center;
+    }
     .shell {
       position: relative;
-      width: min(100%, 440px);
+      width: min(100%, 1120px);
       border: 1px solid hsl(var(--border));
-      border-radius: 28px;
-      padding: 28px;
-      background: linear-gradient(180deg, hsl(var(--surface) / 0.88) 0%, hsl(var(--surface-2) / 0.78) 100%);
-      box-shadow: 0 24px 90px rgba(0, 0, 0, 0.42);
-      backdrop-filter: blur(20px);
+      background: hsl(var(--surface) / 0.86);
+      box-shadow: 0 24px 90px rgba(0, 0, 0, 0.32);
     }
-    .eyebrow { margin: 0 0 10px; font-size: 10px; letter-spacing: 0.34em; text-transform: uppercase; color: hsl(var(--cyan)); font-family: 'JetBrains Mono', monospace; }
-    h1 { margin: 0; font-size: 1.9rem; line-height: 1.1; letter-spacing: -0.02em; }
-    .lede { margin: 14px 0 22px; color: hsl(var(--muted)); line-height: 1.55; font-size: 0.95rem; }
-    .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
-    .pill { border: 1px solid hsl(var(--border)); border-radius: 999px; padding: 7px 10px; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: hsl(var(--muted)); background: rgba(0, 0, 0, 0.12); }
+    .grid { display: grid; }
+    .top { grid-template-columns: 1.05fr 0.95fr; }
+    .panel { border: 1px solid hsl(var(--border)); background: hsl(var(--surface-2) / 0.8); }
+    .panel-soft { border: 1px solid hsl(var(--border)); background: rgba(0, 0, 0, 0.1); }
+    .eyebrow { margin: 0; font-size: 10px; letter-spacing: 0.34em; text-transform: uppercase; color: hsl(var(--cyan)); font-family: 'JetBrains Mono', monospace; }
+    h1 { margin: 0; font-size: clamp(1.8rem, 4vw, 3rem); line-height: 1.02; letter-spacing: -0.04em; }
+    h2 { margin: 0; font-size: 1.15rem; line-height: 1.1; }
+    .lede { margin: 14px 0 0; color: hsl(var(--muted)); line-height: 1.65; font-size: 0.96rem; max-width: 58ch; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+    .pill { border: 1px solid hsl(var(--border)); padding: 7px 10px; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: hsl(var(--muted)); background: rgba(0, 0, 0, 0.12); }
+    .section { padding: 24px; }
+    .kicker { margin: 0; font-size: 10px; font-weight: 700; letter-spacing: 0.34em; text-transform: uppercase; color: hsl(var(--cyan)); }
+    .copy { margin: 0; color: hsl(var(--muted)); line-height: 1.6; font-size: 0.95rem; }
     label { display: block; margin-bottom: 8px; font-size: .78rem; text-transform: uppercase; letter-spacing: .18em; color: hsl(var(--cyan)); }
     input {
       box-sizing: border-box;
       width: 100%;
       border: 1px solid hsl(var(--border));
-      border-radius: 14px;
       padding: 13px 14px;
-      background: rgba(0, 0, 0, 0.22);
+      background: hsl(var(--surface-2));
       color: inherit;
       font: inherit;
       outline: none;
@@ -1096,36 +1108,101 @@ function registerApiRoutes(
     }
     input:focus { border-color: hsl(var(--cyan) / 0.7); box-shadow: 0 0 0 4px hsl(var(--cyan) / 0.12); }
     button {
-      width: 100%;
-      margin-top: 16px;
-      border: 0;
-      border-radius: 999px;
+      border: 1px solid hsl(var(--border));
       padding: 13px 16px;
-      background: linear-gradient(135deg, hsl(var(--gold)) 0%, #f3d48d 100%);
-      color: #17120a;
-      font-weight: 800;
+      background: hsl(var(--surface-2));
+      color: hsl(var(--text));
+      font-weight: 700;
       cursor: pointer;
-      box-shadow: 0 10px 28px rgba(216, 180, 95, 0.18);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
     }
+    .button-primary { border-color: hsl(var(--gold) / 0.7); background: hsl(var(--gold) / 0.14); color: hsl(var(--gold)); }
     .hint { margin: 16px 0 0; font-size: 12px; line-height: 1.5; color: hsl(var(--muted)); }
+    .link-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .link { display: block; border: 1px solid hsl(var(--border)); background: hsl(var(--surface-2)); color: hsl(var(--text)); padding: 12px 14px; text-decoration: none; }
+    .link small { display: block; margin-top: 6px; color: hsl(var(--muted)); font-size: 12px; line-height: 1.45; }
+    .bar { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip { border: 1px solid hsl(var(--border)); padding: 7px 10px; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: hsl(var(--muted)); background: rgba(0, 0, 0, 0.12); }
+    .stats { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .stat { border: 1px solid hsl(var(--border)); background: rgba(0, 0, 0, 0.1); padding: 14px; }
+    .stat span { display: block; }
+    .stat .label { font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase; color: hsl(var(--muted)); }
+    .stat .value { margin-top: 8px; font-size: 1rem; font-weight: 700; color: hsl(var(--text)); }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    .actions a, .actions button { flex: 1 1 160px; text-align: center; text-decoration: none; }
+    .secondary { background: transparent; }
+    .route-note { margin-top: 14px; border-top: 1px solid hsl(var(--border)); padding-top: 14px; font-size: 12px; line-height: 1.6; color: hsl(var(--muted)); }
+    .stat .value, .link { overflow-wrap: anywhere; }
+    @media (max-width: 860px) {
+      body { padding: 14px; }
+      .page { min-height: calc(100vh - 28px); }
+      .top { grid-template-columns: 1fr; }
+      .stats, .link-grid { grid-template-columns: 1fr; }
+      .section { padding: 18px; }
+      .meta { gap: 6px; }
+      .pill, .chip { letter-spacing: 0.12em; }
+    }
   </style>
 </head>
 <body>
-  <form class="shell" method="post" action="/api/admin/login">
-    <p class="eyebrow">JuryRigged · Operator Access</p>
-    <h1>Enter the protected dashboard</h1>
-    <p class="lede">Broadcast controls, moderation, and recap tools live behind this court seal.</p>
-    <div class="meta">
-      <span class="pill">/operator</span>
-      <span class="pill">Protected</span>
-      <span class="pill">Courtroom broadcast</span>
+  <main class="page">
+    <div class="shell">
+      <div class="grid top">
+        <section class="section">
+          <p class="eyebrow">JuryRigged · Operator Access</p>
+          <h1>Enter the protected dashboard</h1>
+          <p class="lede">Broadcast controls, moderation, audit tools, and session ops live behind this court seal.</p>
+
+          <div class="meta">
+            <span class="pill">/operator</span>
+            <span class="pill">Protected</span>
+            <span class="pill">Hard-bordered HUD</span>
+          </div>
+
+          <div class="stats">
+            <div class="stat"><span class="label">Public app</span><span class="value">/app/?view=dashboard</span></div>
+            <div class="stat"><span class="label">Broadcast</span><span class="value">/app/?view=overlay</span></div>
+            <div class="stat"><span class="label">Submit</span><span class="value">/app/?view=submit</span></div>
+          </div>
+
+          <div class="actions">
+            <a class="link" href="/app/?view=dashboard">Open public dashboard<small>Audience-facing courtroom view.</small></a>
+            <a class="link" href="/app/?view=overlay">Open broadcast overlay<small>OBS source for the live stream frame.</small></a>
+            <a class="link" href="/app/?view=submit">Open prompt submit<small>Public prompt intake.</small></a>
+            <a class="link" href="/operator">Open operator shell<small>Return to the authenticated admin dashboard.</small></a>
+          </div>
+        </section>
+
+        <form class="section panel" method="post" action="/api/admin/login">
+          <p class="kicker">Operator login</p>
+          <h2 style="margin-top: 10px;">Authenticate to continue</h2>
+          <p class="copy" style="margin-top: 12px;">Enter the admin password to access the protected shell. Logout stays one click away inside the dashboard.</p>
+          <input type="hidden" name="next" value="${escapeHtml(next)}" />
+
+          <div style="margin-top: 18px;">
+            <label for="password">Admin password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" autofocus required />
+          </div>
+
+          <button class="button-primary" type="submit" style="width: 100%; margin-top: 18px;">Enter operator</button>
+
+          <div class="route-note">
+            Need the public broadcast? Use the app links above; this page only opens the operator dashboard.
+          </div>
+        </form>
+      </div>
+
+      <div class="panel" style="margin-top: 16px; padding: 16px 18px;">
+        <div class="bar">
+          <span class="chip">Public app</span>
+          <span class="chip">Overlay</span>
+          <span class="chip">Submit prompt</span>
+          <span class="chip">Operator</span>
+        </div>
+      </div>
     </div>
-    <input type="hidden" name="next" value="${escapeHtml(next)}" />
-    <label for="password">Admin password</label>
-    <input id="password" name="password" type="password" autocomplete="current-password" autofocus required />
-    <button type="submit">Enter operator</button>
-    <p class="hint">Need the public broadcast? Use the main app or the overlay deep link; this login only opens the dashboard.</p>
-  </form>
+  </main>
 </body>
 </html>`);
     });
@@ -1149,8 +1226,12 @@ function registerApiRoutes(
         return res.json({ ok: true });
     });
 
-    app.post('/api/admin/logout', adminGet, (_req, res) => {
+    app.post('/api/admin/logout', adminGet, (req, res) => {
         res.setHeader('Set-Cookie', clearedAdminCookie(deps.adminAuth));
+        if (wantsHtml(req)) {
+            res.redirect(303, '/admin/login');
+            return;
+        }
         res.json({ ok: true });
     });
 

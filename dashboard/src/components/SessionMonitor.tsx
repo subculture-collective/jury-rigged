@@ -9,49 +9,32 @@ interface SessionMonitorProps {
     loading: boolean;
 }
 
-export function SessionMonitor({
-    events,
-    snapshot,
-    loading,
-}: SessionMonitorProps) {
+export function SessionMonitor({ events, snapshot, loading }: SessionMonitorProps) {
     const shouldComputeEventDerivatives = !loading && snapshot !== null;
 
-    // Phase 3: Extract evidence cards from events
     const evidenceCards = useMemo(() => {
         if (!shouldComputeEventDerivatives) {
             return [];
         }
 
         return events
-            .filter(e => e.type === 'evidence_revealed')
-            .map(e => {
-                const payload = e.payload as Record<string, unknown>;
+            .filter(event => event.type === 'evidence_revealed')
+            .map(event => {
+                const payload = event.payload as Record<string, unknown>;
                 return {
-                    evidenceId:
-                        typeof payload.evidenceId === 'string' ?
-                            payload.evidenceId
-                        :   '',
-                    evidenceText:
-                        typeof payload.evidenceText === 'string' ?
-                            payload.evidenceText
-                        :   '',
-                    revealedAt:
-                        typeof payload.revealedAt === 'string' ?
-                            payload.revealedAt
-                        :   e.at,
+                    evidenceId: typeof payload.evidenceId === 'string' ? payload.evidenceId : '',
+                    evidenceText: typeof payload.evidenceText === 'string' ? payload.evidenceText : '',
+                    revealedAt: typeof payload.revealedAt === 'string' ? payload.revealedAt : event.at,
                 };
             });
     }, [events, shouldComputeEventDerivatives]);
 
-    // Phase 3: Extract objection count from events
     const objectionCount = useMemo(() => {
         if (!shouldComputeEventDerivatives) {
             return 0;
         }
 
-        const objectionEvents = events.filter(
-            e => e.type === 'objection_count_changed',
-        );
+        const objectionEvents = events.filter(event => event.type === 'objection_count_changed');
         if (objectionEvents.length === 0) return 0;
         const latest = objectionEvents[objectionEvents.length - 1];
         const payload = latest.payload as Record<string, unknown>;
@@ -59,18 +42,14 @@ export function SessionMonitor({
     }, [events, shouldComputeEventDerivatives]);
 
     const latestEvents = useMemo(
-        () =>
-            shouldComputeEventDerivatives ? events.slice(-10).reverse() : [],
+        () => (shouldComputeEventDerivatives ? events.slice(-12).reverse() : []),
         [events, shouldComputeEventDerivatives],
     );
 
     const totalVotes = useMemo(
         () =>
             snapshot ?
-                Object.values(snapshot.votes).reduce(
-                    (sum, voteCount) => sum + voteCount.total,
-                    0,
-                )
+                Object.values(snapshot.votes).reduce((sum, voteCount) => sum + voteCount.total, 0)
             :   0,
         [snapshot],
     );
@@ -78,224 +57,170 @@ export function SessionMonitor({
     if (loading) {
         return (
             <div className='flex items-center justify-center py-12'>
-                <div className='text-gray-400'>Loading session data...</div>
+                <div className='admin-panel px-4 py-3 text-sm text-[hsl(var(--muted))]'>Loading session data…</div>
             </div>
         );
     }
 
     if (!snapshot) {
         return (
-            <div className='bg-gray-800 rounded-lg p-8 text-center'>
-                <p className='text-gray-400 text-lg'>No active session</p>
-                <p className='text-gray-500 text-sm mt-2'>
-                    Start a new session to begin monitoring
-                </p>
+            <div className='admin-panel-strong max-w-2xl p-6'>
+                <p className='admin-kicker text-[hsl(var(--gold))]'>Live court</p>
+                <h2 className='admin-title mt-2'>No active session</h2>
+                <p className='admin-copy mt-3'>Start a new session or wait for the next court run to connect the operator view.</p>
             </div>
         );
     }
 
+    const witnessMax = snapshot.config.maxWitnessStatements;
+
     return (
-        <div className='grid grid-cols-1 lg:grid-cols-2 gap-6'>
-            {/* Session Info */}
-            <div className='bg-gray-800 rounded-lg p-6 shadow-lg'>
-                <h2 className='text-xl font-semibold mb-4 text-primary-400'>
-                    Session Info
-                </h2>
-                <div className='space-y-3'>
-                    <div className='flex justify-between'>
-                        <span className='text-gray-400'>Session ID:</span>
-                        <span className='font-mono text-sm'>
-                            {snapshot.sessionId.slice(0, 16)}...
-                        </span>
-                    </div>
-                    <div className='flex justify-between'>
-                        <span className='text-gray-400'>Current Phase:</span>
-                        <span className='font-semibold text-primary-400'>
-                            {snapshot.phase}
-                        </span>
-                    </div>
-                    <div className='flex justify-between'>
-                        <span className='text-gray-400'>
-                            Transcript Entries:
-                        </span>
-                        <span>{snapshot.transcript.length}</span>
-                    </div>
-                    <div className='flex justify-between'>
-                        <span className='text-gray-400'>Total Votes:</span>
-                        <span>{totalVotes}</span>
-                    </div>
-                    <div className='flex justify-between'>
-                        <span className='text-gray-400'>Recap Count:</span>
-                        <span>{snapshot.recapCount}</span>
-                    </div>
+        <div className='grid gap-5 xl:grid-cols-2'>
+            <section className='admin-panel-strong p-5'>
+                <p className='admin-kicker'>Session info</p>
+                <div className='mt-3 grid gap-3 sm:grid-cols-2'>
+                    <Stat label='Session ID' value={`${snapshot.sessionId.slice(0, 12)}…`} />
+                    <Stat label='Phase' value={snapshot.phase} />
+                    <Stat label='Transcript entries' value={String(snapshot.transcript.length)} />
+                    <Stat label='Total votes' value={String(totalVotes)} />
+                    <Stat label='Recap count' value={String(snapshot.recapCount)} />
+                    <Stat label='Objections' value={String(objectionCount)} />
                 </div>
-            </div>
 
-            {/* Witness Caps */}
-            <div className='bg-gray-800 rounded-lg p-6 shadow-lg'>
-                <h2 className='text-xl font-semibold mb-4 text-primary-400'>
-                    Witness Caps
-                </h2>
-                <div className='space-y-4'>
-                    <div>
-                        <div className='flex justify-between mb-2'>
-                            <span className='text-gray-400'>Witness 1</span>
-                            <span className='text-sm'>
-                                {snapshot.witnessCaps.witness1} /{' '}
-                                {snapshot.config.maxWitnessStatements}
-                            </span>
-                        </div>
-                        <div className='w-full bg-gray-700 rounded-full h-2.5'>
-                            <div
-                                className='bg-blue-500 h-2.5 rounded-full transition-all'
-                                style={{
-                                    width: `${(snapshot.witnessCaps.witness1 / snapshot.config.maxWitnessStatements) * 100}%`,
-                                }}
-                            />
-                        </div>
+                <div className='mt-5 rounded-none border border-[hsl(var(--border))] bg-black/10 p-4'>
+                    <div className='flex items-center justify-between gap-3'>
+                        <p className='text-xs uppercase tracking-[0.22em] text-[hsl(var(--muted))]'>Session density</p>
+                        <p className='text-sm font-semibold text-[hsl(var(--text))]'>{snapshot.transcript.length} turns on record</p>
                     </div>
-                    <div>
-                        <div className='flex justify-between mb-2'>
-                            <span className='text-gray-400'>Witness 2</span>
-                            <span className='text-sm'>
-                                {snapshot.witnessCaps.witness2} /{' '}
-                                {snapshot.config.maxWitnessStatements}
-                            </span>
-                        </div>
-                        <div className='w-full bg-gray-700 rounded-full h-2.5'>
-                            <div
-                                className='bg-purple-500 h-2.5 rounded-full transition-all'
-                                style={{
-                                    width: `${(snapshot.witnessCaps.witness2 / snapshot.config.maxWitnessStatements) * 100}%`,
-                                }}
-                            />
-                        </div>
-                    </div>
+                    <p className='admin-copy mt-2'>This panel keeps the live courtroom state compact so operators can see phase, tally, and transcript pressure without opening other tabs.</p>
                 </div>
-                <div className='mt-4 text-sm text-gray-400'>
-                    Recap interval: every {snapshot.config.recapInterval}{' '}
-                    statements
+            </section>
+
+            <section className='admin-panel p-5'>
+                <p className='admin-kicker text-[hsl(var(--cyan))]'>Witness caps</p>
+                <div className='mt-4 space-y-4'>
+                    <WitnessBar label='Witness 1' value={snapshot.witnessCaps.witness1} max={witnessMax} tone='cyan' />
+                    <WitnessBar label='Witness 2' value={snapshot.witnessCaps.witness2} max={witnessMax} tone='purple' />
                 </div>
-            </div>
+                <p className='mt-4 text-sm text-[hsl(var(--muted))]'>Recap interval: every {snapshot.config.recapInterval} statements</p>
+                <div className='mt-4'>
+                    <ObjectionCounter count={objectionCount} />
+                </div>
+            </section>
 
-            {/* Phase 3: Objection Counter */}
-            <div className='bg-gray-800 rounded-lg p-6 shadow-lg'>
-                <h2 className='text-xl font-semibold mb-4 text-primary-400'>
-                    Objections
-                </h2>
-                <ObjectionCounter count={objectionCount} />
-            </div>
-
-            {/* Phase 3: Evidence Cards */}
-            {evidenceCards.length > 0 && (
-                <div className='bg-gray-800 rounded-lg p-6 shadow-lg lg:col-span-2'>
-                    <h2 className='text-xl font-semibold mb-4 text-primary-400'>
-                        Evidence Revealed
-                    </h2>
-                    <div className='space-y-4'>
+            {evidenceCards.length > 0 ? (
+                <section className='admin-panel-strong p-5 xl:col-span-2'>
+                    <p className='admin-kicker text-[hsl(var(--gold))]'>Evidence revealed</p>
+                    <div className='mt-4 space-y-3'>
                         {evidenceCards.map(card => (
                             <EvidenceCard
-                                key={card.evidenceId}
+                                key={card.evidenceId || `${card.revealedAt}-${card.evidenceText}`}
                                 evidenceId={card.evidenceId}
                                 evidenceText={card.evidenceText}
                                 revealedAt={card.revealedAt}
                             />
                         ))}
                     </div>
-                </div>
-            )}
+                </section>
+            ) : null}
 
-            {/* Vote Tallies */}
-            <div className='bg-gray-800 rounded-lg p-6 shadow-lg'>
-                <h2 className='text-xl font-semibold mb-4 text-primary-400'>
-                    Vote Tallies
-                </h2>
-                <div className='space-y-4'>
+            <section className='admin-panel p-5'>
+                <p className='admin-kicker text-[hsl(var(--green))]'>Vote tallies</p>
+                <div className='mt-4 space-y-4'>
                     {Object.entries(snapshot.votes).map(([phase, counts]) => (
-                        <div key={phase}>
-                            <div className='text-sm font-medium text-gray-300 mb-2'>
-                                {phase}
+                        <div key={phase} className='border border-[hsl(var(--border))] bg-black/10 p-4'>
+                            <div className='flex items-center justify-between gap-3'>
+                                <p className='text-sm font-semibold text-[hsl(var(--text))]'>{phase}</p>
+                                <p className='text-xs uppercase tracking-[0.22em] text-[hsl(var(--muted))]'>Total {counts.total}</p>
                             </div>
-                            <div className='grid grid-cols-2 gap-3'>
-                                <div className='bg-green-900/30 border border-green-700 rounded p-3'>
-                                    <div className='text-xs text-gray-400'>
-                                        Innocent
-                                    </div>
-                                    <div className='text-2xl font-bold text-green-400'>
-                                        {counts.innocent}
-                                    </div>
-                                </div>
-                                <div className='bg-red-900/30 border border-red-700 rounded p-3'>
-                                    <div className='text-xs text-gray-400'>
-                                        Guilty
-                                    </div>
-                                    <div className='text-2xl font-bold text-red-400'>
-                                        {counts.guilty}
-                                    </div>
-                                </div>
+                            <div className='mt-3 grid grid-cols-2 gap-3'>
+                                <VoteCard label='Innocent' value={counts.innocent} tone='green' />
+                                <VoteCard label='Guilty' value={counts.guilty} tone='red' />
                             </div>
                         </div>
                     ))}
                 </div>
-            </div>
+            </section>
 
-            {/* Live Event Feed */}
-            <div className='bg-gray-800 rounded-lg p-6 shadow-lg'>
-                <h2 className='text-xl font-semibold mb-4 text-primary-400'>
-                    Live Event Feed
-                </h2>
-                <div className='space-y-2 max-h-96 overflow-y-auto'>
-                    {latestEvents.length === 0 ?
-                        <div className='text-gray-500 text-center py-4'>
-                            No recent events
-                        </div>
-                    :   latestEvents.map(event => {
-                            const payload = event.payload as Record<
-                                string,
-                                unknown
-                            >;
-                            const turn = payload.turn as
-                                | { speaker?: string }
-                                | undefined;
+            <section className='admin-panel-strong p-5'>
+                <div className='flex items-center justify-between gap-3'>
+                    <p className='admin-kicker text-[hsl(var(--purple))]'>Live event feed</p>
+                    <span className='admin-chip'>{latestEvents.length} shown</span>
+                </div>
+                <div className='admin-scroll mt-4 max-h-[28rem] space-y-2 pr-1' role='log' aria-live='polite'>
+                    {latestEvents.length === 0 ? (
+                        <div className='admin-panel px-4 py-4 text-sm text-[hsl(var(--muted))]'>No recent events</div>
+                    ) : (
+                        latestEvents.map(event => {
+                            const payload = event.payload as Record<string, unknown>;
+                            const turn = payload.turn as { speaker?: string } | undefined;
                             return (
-                                <div
-                                    key={event.id}
-                                    className='bg-gray-700 rounded p-3 text-sm border-l-4 border-primary-500'
-                                >
-                                    <div className='flex justify-between items-start mb-1'>
-                                        <span className='font-medium text-primary-300'>
-                                            {event.type}
-                                        </span>
-                                        <span className='text-xs text-gray-400'>
-                                            {new Date(
-                                                event.at,
-                                            ).toLocaleTimeString()}
-                                        </span>
+                                <article key={event.id} className='border border-[hsl(var(--border))] bg-black/10 p-3'>
+                                    <div className='flex flex-wrap items-center gap-2'>
+                                        <span className='admin-chip'>{new Date(event.at).toLocaleTimeString()}</span>
+                                        <span className='text-sm font-semibold text-[hsl(var(--text))]'>{event.type}</span>
+                                        {turn?.speaker ? <span className='text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted))]'>{turn.speaker}</span> : null}
                                     </div>
-                                    {event.type === 'turn' &&
-                                        typeof turn?.speaker === 'string' && (
-                                            <div className='text-gray-300'>
-                                                <span className='text-gray-400'>
-                                                    Speaker:
-                                                </span>{' '}
-                                                {turn.speaker}
-                                            </div>
-                                        )}
-                                    {event.type === 'phase_changed' &&
-                                        typeof payload.phase === 'string' && (
-                                            <div className='text-gray-300'>
-                                                <span className='text-gray-400'>
-                                                    Phase:
-                                                </span>{' '}
-                                                {payload.phase}
-                                            </div>
-                                        )}
-                                </div>
+                                    <pre className='mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-[hsl(var(--muted))]'>
+                                        {JSON.stringify(event.payload, null, 2)}
+                                    </pre>
+                                </article>
                             );
                         })
-                    }
+                    )}
                 </div>
+            </section>
+        </div>
+    );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+    return (
+        <div className='border border-[hsl(var(--border))] bg-black/10 p-3'>
+            <p className='text-[0.68rem] uppercase tracking-[0.22em] text-[hsl(var(--muted))]'>{label}</p>
+            <p className='mt-2 break-words text-sm font-semibold text-[hsl(var(--text))]'>{value}</p>
+        </div>
+    );
+}
+
+function WitnessBar({
+    label,
+    value,
+    max,
+    tone,
+}: {
+    label: string;
+    value: number;
+    max: number;
+    tone: 'cyan' | 'purple';
+}) {
+    const percent = max > 0 ? Math.min((value / max) * 100, 100) : 0;
+
+    return (
+        <div>
+            <div className='flex items-center justify-between gap-3'>
+                <p className='text-sm font-semibold text-[hsl(var(--text))]'>{label}</p>
+                <p className='text-xs text-[hsl(var(--muted))]'>
+                    {value} / {max}
+                </p>
             </div>
+            <div className='mt-2 h-2 border border-[hsl(var(--border))] bg-black/20'>
+                <div
+                    className='h-full'
+                    style={{ width: `${percent}%`, backgroundColor: `hsl(var(--${tone}))` }}
+                />
+            </div>
+        </div>
+    );
+}
+
+function VoteCard({ label, value, tone }: { label: string; value: number; tone: 'green' | 'red' }) {
+    return (
+        <div className='border border-[hsl(var(--border))] bg-black/10 p-3'>
+            <p className='text-xs uppercase tracking-[0.22em] text-[hsl(var(--muted))]'>{label}</p>
+            <p className='mt-2 text-2xl font-semibold' style={{ color: `hsl(var(--${tone}))` }}>
+                {value}
+            </p>
         </div>
     );
 }

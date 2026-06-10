@@ -20,37 +20,20 @@ export function Analytics({ events }: AnalyticsProps) {
             byType[event.type] = (byType[event.type] || 0) + 1;
 
             if (event.type === 'phase_changed') {
-                const phase =
-                    typeof event.payload.phase === 'string' ?
-                        event.payload.phase
-                    :   '';
+                const phase = typeof event.payload.phase === 'string' ? event.payload.phase : '';
                 if (phase) {
                     byPhase[phase] = (byPhase[phase] || 0) + 1;
                 }
             }
 
-            if (event.type === 'vote_updated') {
-                votes += 1;
-            }
-
-            if (event.type === 'turn') {
-                statements += 1;
-            }
-
-            if (event.type === 'judge_recap_emitted') {
-                recaps += 1;
-            }
-
-            if (event.type === 'token_budget_applied') {
-                tokenBudgetApplied += 1;
-            }
+            if (event.type === 'vote_updated') votes += 1;
+            if (event.type === 'turn') statements += 1;
+            if (event.type === 'judge_recap_emitted') recaps += 1;
+            if (event.type === 'token_budget_applied') tokenBudgetApplied += 1;
 
             if (event.type === 'session_token_estimate') {
-                if (
-                    typeof event.payload.cumulativeEstimatedTokens === 'number'
-                ) {
-                    latestEstimatedTokens =
-                        event.payload.cumulativeEstimatedTokens;
+                if (typeof event.payload.cumulativeEstimatedTokens === 'number') {
+                    latestEstimatedTokens = event.payload.cumulativeEstimatedTokens;
                 }
 
                 if (typeof event.payload.estimatedCostUsd === 'number') {
@@ -59,13 +42,8 @@ export function Analytics({ events }: AnalyticsProps) {
             }
         }
 
-        const sortedByType = Object.entries(byType).sort(
-            ([, leftCount], [, rightCount]) => rightCount - leftCount,
-        );
-
-        const sortedByPhase = Object.entries(byPhase).sort(
-            ([, leftCount], [, rightCount]) => rightCount - leftCount,
-        );
+        const sortedByType = Object.entries(byType).sort(([, leftCount], [, rightCount]) => rightCount - leftCount);
+        const sortedByPhase = Object.entries(byPhase).sort(([, leftCount], [, rightCount]) => rightCount - leftCount);
 
         return {
             total: events.length,
@@ -82,149 +60,117 @@ export function Analytics({ events }: AnalyticsProps) {
     }, [events]);
 
     return (
-        <div className='space-y-6'>
-            {/* Summary Stats */}
-            <div className='grid grid-cols-1 md:grid-cols-6 gap-4'>
-                <div className='bg-gray-800 rounded-lg p-6'>
-                    <div className='text-sm text-gray-400'>Total Events</div>
-                    <div className='text-3xl font-bold text-primary-400'>
-                        {stats.total}
-                    </div>
-                </div>
-                <div className='bg-gray-800 rounded-lg p-6'>
-                    <div className='text-sm text-gray-400'>Statements</div>
-                    <div className='text-3xl font-bold text-blue-400'>
-                        {stats.statements}
-                    </div>
-                </div>
-                <div className='bg-gray-800 rounded-lg p-6'>
-                    <div className='text-sm text-gray-400'>Votes</div>
-                    <div className='text-3xl font-bold text-green-400'>
-                        {stats.votes}
-                    </div>
-                </div>
-                <div className='bg-gray-800 rounded-lg p-6'>
-                    <div className='text-sm text-gray-400'>Recaps</div>
-                    <div className='text-3xl font-bold text-purple-400'>
-                        {stats.recaps}
-                    </div>
-                </div>
-                <div className='bg-gray-800 rounded-lg p-6'>
-                    <div className='text-sm text-gray-400'>Token Caps</div>
-                    <div className='text-3xl font-bold text-amber-400'>
-                        {stats.tokenBudgetApplied}
-                    </div>
-                </div>
-                <div className='bg-gray-800 rounded-lg p-6'>
-                    <div className='text-sm text-gray-400'>Est. Cost (USD)</div>
-                    <div className='text-3xl font-bold text-emerald-400'>
-                        ${stats.latestEstimatedCostUsd.toFixed(4)}
-                    </div>
-                    <div className='text-xs text-gray-500 mt-1'>
-                        ~{stats.latestEstimatedTokens} tokens
-                    </div>
-                </div>
+        <section className='space-y-5'>
+            <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-6'>
+                <Metric label='Total events' value={String(stats.total)} tone='cyan' />
+                <Metric label='Statements' value={String(stats.statements)} tone='blue' />
+                <Metric label='Votes' value={String(stats.votes)} tone='green' />
+                <Metric label='Recaps' value={String(stats.recaps)} tone='purple' />
+                <Metric label='Token caps' value={String(stats.tokenBudgetApplied)} tone='gold' />
+                <Metric label='Est. cost' value={`$${stats.latestEstimatedCostUsd.toFixed(4)}`} tone='green' subvalue={`~${stats.latestEstimatedTokens} tokens`} />
             </div>
 
-            {/* Events by Type */}
-            <div className='bg-gray-800 rounded-lg p-6 shadow-lg'>
-                <h2 className='text-xl font-semibold mb-4 text-primary-400'>
-                    Events by Type
-                </h2>
-                <div className='space-y-2'>
-                    {stats.byType.map(([type, count]) => (
-                        <div key={type} className='flex items-center gap-3'>
-                            <div className='flex-1'>
-                                <div className='flex justify-between mb-1'>
-                                    <span className='text-sm font-medium text-gray-300'>
-                                        {type}
-                                    </span>
-                                    <span className='text-sm text-gray-400'>
-                                        {count}
-                                    </span>
-                                </div>
-                                <div className='w-full bg-gray-700 rounded-full h-2'>
-                                    <div
-                                        className='bg-primary-500 h-2 rounded-full transition-all'
-                                        style={{
-                                            width: `${(count / Math.max(stats.total, 1)) * 100}%`,
-                                        }}
-                                    />
-                                </div>
-                            </div>
+            <div className='grid gap-5 xl:grid-cols-[0.9fr_1.1fr]'>
+                <div className='space-y-5'>
+                    <div className='admin-panel-strong p-5'>
+                        <p className='admin-kicker'>Event mix</p>
+                        <div className='mt-4 space-y-3'>
+                            {stats.byType.map(([type, count]) => (
+                                <Row key={type} label={type} count={count} total={stats.total} />
+                            ))}
                         </div>
-                    ))}
+                    </div>
+
+                    <div className='admin-panel p-5'>
+                        <p className='admin-kicker text-[hsl(var(--cyan))]'>Phase mix</p>
+                        {stats.byPhase.length === 0 ? (
+                            <div className='mt-4 border border-[hsl(var(--border))] bg-black/10 p-4 text-sm text-[hsl(var(--muted))]'>
+                                No phase data available
+                            </div>
+                        ) : (
+                            <div className='mt-4 space-y-3'>
+                                {stats.byPhase.map(([phase, count]) => (
+                                    <div key={phase} className='border border-[hsl(var(--border))] bg-black/10 p-4'>
+                                        <div className='flex items-center justify-between gap-3'>
+                                            <p className='text-sm font-semibold text-[hsl(var(--text))]'>{phase}</p>
+                                            <p className='text-xs text-[hsl(var(--muted))]'>
+                                                {((count / Math.max(stats.total, 1)) * 100).toFixed(1)}%
+                                            </p>
+                                        </div>
+                                        <div className='mt-3 h-2 border border-[hsl(var(--border))] bg-black/20'>
+                                            <div
+                                                className='h-full bg-[hsl(var(--purple))]'
+                                                style={{ width: `${(count / Math.max(stats.total, 1)) * 100}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className='admin-panel-strong p-5'>
+                    <div className='flex items-center justify-between gap-3'>
+                        <p className='admin-kicker text-[hsl(var(--gold))]'>Event timeline</p>
+                        <span className='admin-chip'>{stats.recentEvents.length} shown</span>
+                    </div>
+                    <div className='admin-scroll mt-4 max-h-[44rem] space-y-2 pr-1'>
+                        {stats.total === 0 ? (
+                            <div className='border border-[hsl(var(--border))] bg-black/10 p-5 text-sm text-[hsl(var(--muted))]'>
+                                No events recorded
+                            </div>
+                        ) : (
+                            stats.recentEvents.map(event => (
+                                <div key={event.id} className='border border-[hsl(var(--border))] bg-black/10 p-3'>
+                                    <div className='flex flex-wrap items-center gap-2'>
+                                        <span className='admin-chip'>{new Date(event.at).toLocaleTimeString()}</span>
+                                        <span className='text-sm font-semibold text-[hsl(var(--text))]'>{event.type}</span>
+                                        {event.type === 'phase_changed' && event.payload.phase ? (
+                                            <span className='text-xs text-[hsl(var(--muted))]'>({event.payload.phase as string})</span>
+                                        ) : null}
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
                 </div>
             </div>
+        </section>
+    );
+}
 
-            {/* Events by Phase */}
-            <div className='bg-gray-800 rounded-lg p-6 shadow-lg'>
-                <h2 className='text-xl font-semibold mb-4 text-primary-400'>
-                    Events by Phase
-                </h2>
-                {stats.byPhase.length === 0 ?
-                    <div className='text-gray-500 text-center py-4'>
-                        No phase data available
-                    </div>
-                :   <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
-                        {stats.byPhase.map(([phase, count]) => (
-                            <div
-                                key={phase}
-                                className='bg-gray-700 rounded-lg p-4'
-                            >
-                                <div className='text-sm text-gray-400'>
-                                    {phase}
-                                </div>
-                                <div className='text-2xl font-bold text-primary-400'>
-                                    {count}
-                                </div>
-                                <div className='text-xs text-gray-500 mt-1'>
-                                    {(
-                                        (count / Math.max(stats.total, 1)) *
-                                        100
-                                    ).toFixed(1)}
-                                    % of all events
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                }
+function Metric({
+    label,
+    value,
+    tone,
+    subvalue,
+}: {
+    label: string;
+    value: string;
+    tone: 'cyan' | 'blue' | 'green' | 'purple' | 'gold';
+    subvalue?: string;
+}) {
+    return (
+        <div className='border border-[hsl(var(--border))] bg-black/10 p-4'>
+            <p className='text-[0.68rem] uppercase tracking-[0.22em] text-[hsl(var(--muted))]'>{label}</p>
+            <p className='mt-2 text-2xl font-semibold' style={{ color: `hsl(var(--${tone}))` }}>
+                {value}
+            </p>
+            {subvalue ? <p className='mt-1 text-xs text-[hsl(var(--muted))]'>{subvalue}</p> : null}
+        </div>
+    );
+}
+
+function Row({ label, count, total }: { label: string; count: number; total: number }) {
+    return (
+        <div>
+            <div className='mb-1 flex items-center justify-between gap-3'>
+                <span className='text-sm font-medium text-[hsl(var(--text))]'>{label}</span>
+                <span className='text-xs text-[hsl(var(--muted))]'>{count}</span>
             </div>
-
-            {/* Timeline */}
-            <div className='bg-gray-800 rounded-lg p-6 shadow-lg'>
-                <h2 className='text-xl font-semibold mb-4 text-primary-400'>
-                    Event Timeline
-                </h2>
-                <div className='space-y-1 max-h-96 overflow-y-auto'>
-                    {stats.total === 0 ?
-                        <div className='text-gray-500 text-center py-4'>
-                            No events recorded
-                        </div>
-                    :   stats.recentEvents.map(event => (
-                            <div
-                                key={event.id}
-                                className='flex items-center gap-3 py-2 px-3 hover:bg-gray-700 rounded transition-colors'
-                            >
-                                <div className='text-xs text-gray-500 font-mono w-20'>
-                                    {new Date(event.at).toLocaleTimeString()}
-                                </div>
-                                <div className='flex-1'>
-                                    <span className='text-sm font-medium text-primary-300'>
-                                        {event.type}
-                                    </span>
-                                    {event.type === 'phase_changed' &&
-                                        event.payload.phase && (
-                                            <span className='ml-2 text-xs text-gray-400'>
-                                                ({event.payload.phase as string}
-                                                )
-                                            </span>
-                                        )}
-                                </div>
-                            </div>
-                        ))
-                    }
-                </div>
+            <div className='h-2 border border-[hsl(var(--border))] bg-black/20'>
+                <div className='h-full bg-[hsl(var(--cyan))]' style={{ width: `${(count / Math.max(total, 1)) * 100}%` }} />
             </div>
         </div>
     );

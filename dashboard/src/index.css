@@ -48,6 +48,7 @@ body {
             transparent 28%
         ),
         linear-gradient(180deg, hsl(var(--bg)) 0%, hsl(211 41% 5%) 100%);
+    overflow-x: hidden;
 }
 
 body::before {
@@ -71,5 +72,175 @@ code {
 
 ::selection {
     background: hsl(var(--cyan) / 0.3);
+    color: hsl(var(--text));
+}
+
+button,
+a,
+input,
+textarea,
+select {
+    font: inherit;
+}
+
+a,
+button,
+input,
+textarea,
+select {
+    outline: none;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+    outline: 1px solid hsl(var(--cyan));
+    outline-offset: 2px;
+}
+
+.admin-panel {
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--surface) / 0.82);
+}
+
+.admin-panel-strong {
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--surface-2) / 0.92);
+}
+
+.admin-panel-flat {
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--surface) / 0.72);
+}
+
+.admin-kicker {
+    margin: 0;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.34em;
+    text-transform: uppercase;
+    color: hsl(var(--cyan));
+}
+
+.admin-title {
+    margin: 0;
+    font-size: clamp(1.25rem, 2vw, 1.95rem);
+    font-weight: 700;
+    line-height: 1.08;
+    letter-spacing: -0.03em;
+}
+
+.admin-copy {
+    margin: 0;
+    color: hsl(var(--muted));
+    font-size: 0.95rem;
+    line-height: 1.65;
+}
+
+.admin-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--surface-2) / 0.88);
+    color: hsl(var(--text));
+    padding: 0.45rem 0.75rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+}
+
+.admin-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--surface-2));
+    color: hsl(var(--text));
+    padding: 0.7rem 0.95rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    transition:
+        border-color 160ms ease,
+        background-color 160ms ease,
+        color 160ms ease,
+        transform 160ms ease;
+}
+
+.admin-button:hover {
+    border-color: hsl(var(--cyan) / 0.72);
+    background: hsl(var(--surface-2) / 0.98);
+    transform: translateY(-1px);
+}
+
+.admin-button[data-active='true'] {
+    border-color: hsl(var(--cyan));
+    color: hsl(var(--cyan));
+    background: hsl(var(--cyan) / 0.1);
+}
+
+.admin-button-ghost {
+    background: transparent;
+}
+
+.admin-button-danger {
+    border-color: hsl(var(--red) / 0.5);
+    color: hsl(var(--red));
+    background: hsl(var(--red) / 0.08);
+}
+
+.admin-field,
+.admin-input,
+.admin-select,
+.admin-textarea {
+    width: 100%;
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--surface-2));
+    color: hsl(var(--text));
+}
+
+.admin-input,
+.admin-select,
+.admin-textarea {
+    box-sizing: border-box;
+    padding: 0.82rem 0.95rem;
+}
+
+.admin-input::placeholder,
+.admin-textarea::placeholder {
+    color: hsl(var(--muted) / 0.9);
+}
+
+.admin-scroll {
+    overflow: auto;
+    scrollbar-color: hsl(var(--border)) transparent;
+}
+
+.admin-stat-card {
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--surface-2) / 0.78);
+    padding: 1rem;
+}
+
+.admin-stat-label {
+    margin: 0;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: hsl(var(--muted));
+}
+
+.admin-stat-value {
+    margin: 0.45rem 0 0;
+    font-size: 1.2rem;
+    font-weight: 700;
+    line-height: 1.15;
     color: hsl(var(--text));
 }

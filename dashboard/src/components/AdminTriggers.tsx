@@ -1,10 +1,6 @@
 import React, { useMemo, useState } from 'react';
 
-type AdminTriggerKind =
-    | 'message'
-    | 'phase_stinger'
-    | 'evidence_stinger'
-    | 'objection_stinger';
+type AdminTriggerKind = 'message' | 'phase_stinger' | 'evidence_stinger' | 'objection_stinger';
 
 const TRIGGER_OPTIONS: Array<{
     kind: AdminTriggerKind;
@@ -47,15 +43,9 @@ export function AdminTriggers({ sessionId }: AdminTriggersProps) {
     const [title, setTitle] = useState('Court notice');
     const [message, setMessage] = useState('Stand by for an operator update.');
     const [loading, setLoading] = useState(false);
-    const [notice, setNotice] = useState<{
-        type: 'success' | 'error';
-        text: string;
-    } | null>(null);
+    const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-    const activeOption = useMemo(
-        () => TRIGGER_OPTIONS.find(option => option.kind === kind),
-        [kind],
-    );
+    const activeOption = useMemo(() => TRIGGER_OPTIONS.find(option => option.kind === kind), [kind]);
 
     const submitTrigger = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -84,15 +74,8 @@ export function AdminTriggers({ sessionId }: AdminTriggersProps) {
             });
 
             if (!response.ok) {
-                const payload = (await response.json().catch(() => null)) as {
-                    error?: string;
-                    code?: string;
-                } | null;
-                throw new Error(
-                    payload?.error ??
-                        payload?.code ??
-                        `Trigger failed with ${response.status}`,
-                );
+                const payload = (await response.json().catch(() => null)) as { error?: string; code?: string } | null;
+                throw new Error(payload?.error ?? payload?.code ?? `Trigger failed with ${response.status}`);
             }
 
             setNotice({
@@ -107,32 +90,29 @@ export function AdminTriggers({ sessionId }: AdminTriggersProps) {
     };
 
     return (
-        <section className='rounded-[2rem] border border-[hsl(var(--border))] bg-[hsl(var(--surface)/0.82)] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.28)] backdrop-blur-xl'>
-            <div className='flex flex-col gap-3 md:flex-row md:items-start md:justify-between'>
-                <div>
-                    <p className='font-monoish text-[10px] uppercase tracking-[0.34em] text-[hsl(var(--gold))]'>Admin triggers</p>
-                    <h2 className='mt-2 text-2xl font-semibold text-[hsl(var(--text))]'>Message + stinger console</h2>
-                    <p className='mt-3 max-w-2xl text-sm leading-6 text-[hsl(var(--muted))]'>
-                        Send protected, one-shot overlay events for operator notes,
-                        phase cards, evidence moments, and objections. These do not
-                        mutate the case; they only emit an SSE trigger for the live
-                        overlay.
+        <section className='admin-panel-strong p-6'>
+            <div className='flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between'>
+                <div className='max-w-2xl'>
+                    <p className='admin-kicker text-[hsl(var(--gold))]'>Admin triggers</p>
+                    <h2 className='admin-title mt-2'>Message + stinger console</h2>
+                    <p className='admin-copy mt-3'>
+                        Send protected, one-shot overlay events for operator notes, phase cards, evidence moments, and
+                        objections. These do not mutate the case; they only emit an SSE trigger for the live overlay.
                     </p>
                 </div>
-                <div className='rounded-2xl border border-[hsl(var(--border))] bg-black/10 px-4 py-3 text-sm text-[hsl(var(--muted))]'>
+
+                <div className='admin-panel px-4 py-3 text-sm text-[hsl(var(--muted))]'>
                     <span className='font-semibold text-[hsl(var(--text))]'>Session:</span>{' '}
-                    <span className='font-mono text-[hsl(var(--cyan))]'>
-                        {sessionId ? sessionId.slice(0, 8) : 'none'}
-                    </span>
+                    <span className='font-mono text-[hsl(var(--cyan))]'>{sessionId ? sessionId.slice(0, 8) : 'none'}</span>
                 </div>
             </div>
 
             {notice ? (
                 <div
-                    className={`mt-5 rounded-2xl border px-4 py-3 text-sm ${
-                        notice.type === 'success' ?
-                            'border-[hsl(var(--green)/0.5)] bg-[hsl(var(--green)/0.12)] text-[hsl(var(--green))]'
-                        :   'border-[hsl(var(--red)/0.5)] bg-[hsl(var(--red)/0.12)] text-[hsl(var(--red))]'
+                    className={`mt-5 border px-4 py-3 text-sm ${
+                        notice.type === 'success'
+                            ? 'border-[hsl(var(--green)/0.5)] bg-[hsl(var(--green)/0.12)] text-[hsl(var(--text))]'
+                            : 'border-[hsl(var(--red)/0.5)] bg-[hsl(var(--red)/0.12)] text-[hsl(var(--text))]'
                     }`}
                 >
                     {notice.text}
@@ -146,61 +126,75 @@ export function AdminTriggers({ sessionId }: AdminTriggersProps) {
                             key={option.kind}
                             type='button'
                             onClick={() => setKind(option.kind)}
-                            className={`w-full rounded-2xl border p-4 text-left transition ${
-                                kind === option.kind ?
-                                    'border-[hsl(var(--cyan)/0.65)] bg-[hsl(var(--cyan)/0.12)]'
-                                :   'border-[hsl(var(--border))] bg-black/10 hover:border-[hsl(var(--cyan)/0.36)]'
-                            }`}
+                            data-active={kind === option.kind}
+                            className='admin-button w-full justify-start rounded-none p-4 text-left normal-case tracking-normal'
                         >
-                            <div className='flex items-center gap-3'>
-                                <span className='text-xl'>{option.emoji}</span>
-                                <span className='font-semibold text-[hsl(var(--text))]'>{option.label}</span>
-                            </div>
-                            <p className='mt-2 text-sm leading-6 text-[hsl(var(--muted))]'>{option.hint}</p>
+                            <span className='text-xl'>{option.emoji}</span>
+                            <span className='flex flex-col items-start gap-1'>
+                                <span className='text-[0.72rem] tracking-[0.22em]'>{option.label}</span>
+                                <span className='text-[0.68rem] font-normal tracking-normal text-[hsl(var(--muted))]'>
+                                    {option.hint}
+                                </span>
+                            </span>
                         </button>
                     ))}
                 </div>
 
-                <div className='rounded-[1.5rem] border border-[hsl(var(--border))] bg-black/10 p-5'>
-                    <label className='block text-xs font-semibold uppercase tracking-[0.22em] text-[hsl(var(--cyan))]' htmlFor='admin-trigger-title'>
-                        Trigger title
-                    </label>
-                    <input
-                        id='admin-trigger-title'
-                        value={title}
-                        onChange={event => setTitle(event.target.value)}
-                        maxLength={80}
-                        required
-                        className='mt-2 w-full rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-4 py-3 text-[hsl(var(--text))] outline-none transition focus:border-[hsl(var(--cyan)/0.7)]'
-                    />
+                <div className='admin-panel p-5'>
+                    <div className='grid gap-4'>
+                        <div>
+                            <label className='admin-kicker text-[hsl(var(--cyan))]' htmlFor='admin-trigger-title'>
+                                Trigger title
+                            </label>
+                            <input
+                                id='admin-trigger-title'
+                                value={title}
+                                onChange={event => setTitle(event.target.value)}
+                                maxLength={80}
+                                required
+                                className='admin-input mt-2'
+                            />
+                        </div>
 
-                    <label className='mt-5 block text-xs font-semibold uppercase tracking-[0.22em] text-[hsl(var(--cyan))]' htmlFor='admin-trigger-message'>
-                        Overlay message
-                    </label>
-                    <textarea
-                        id='admin-trigger-message'
-                        value={message}
-                        onChange={event => setMessage(event.target.value)}
-                        maxLength={280}
-                        required
-                        rows={5}
-                        className='mt-2 w-full resize-none rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] px-4 py-3 text-[hsl(var(--text))] outline-none transition focus:border-[hsl(var(--cyan)/0.7)]'
-                    />
+                        <div>
+                            <label className='admin-kicker text-[hsl(var(--cyan))]' htmlFor='admin-trigger-message'>
+                                Overlay message
+                            </label>
+                            <textarea
+                                id='admin-trigger-message'
+                                value={message}
+                                onChange={event => setMessage(event.target.value)}
+                                maxLength={280}
+                                required
+                                rows={6}
+                                className='admin-textarea mt-2 resize-none'
+                            />
+                        </div>
 
-                    <div className='mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-[hsl(var(--muted))]'>
-                        <span>{title.length}/80 title · {message.length}/280 message</span>
-                        <span>{activeOption?.emoji} {activeOption?.label}</span>
+                        <div className='grid gap-3 sm:grid-cols-2'>
+                            <Metric label='Characters' value={`${title.length}/80 · ${message.length}/280`} />
+                            <Metric label='Trigger type' value={activeOption?.label ?? 'Message'} />
+                        </div>
+
+                        <button
+                            type='submit'
+                            disabled={loading || !sessionId}
+                            className='admin-button admin-button-danger mt-1 w-full justify-center px-5 py-3'
+                        >
+                            {loading ? 'Sending trigger…' : 'Send overlay trigger'}
+                        </button>
                     </div>
-
-                    <button
-                        type='submit'
-                        disabled={loading || !sessionId}
-                        className='mt-5 w-full rounded-full bg-[hsl(var(--gold))] px-5 py-3 font-bold text-slate-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-gray-600 disabled:text-gray-300'
-                    >
-                        {loading ? 'Sending trigger...' : 'Send overlay trigger'}
-                    </button>
                 </div>
             </form>
         </section>
+    );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+    return (
+        <div className='border border-[hsl(var(--border))] bg-black/10 p-3'>
+            <p className='text-[0.68rem] uppercase tracking-[0.22em] text-[hsl(var(--muted))]'>{label}</p>
+            <p className='mt-2 text-sm font-semibold text-[hsl(var(--text))]'>{value}</p>
+        </div>
     );
 }
