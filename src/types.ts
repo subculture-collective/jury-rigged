@@ -173,6 +173,7 @@ export interface TranscriptSearchResult {
     startedAt?: string;
     completedAt?: string;
     turnCount: number;
+    finalRuling?: CourtSessionMetadata['finalRuling'];
 }
 
 export interface TranscriptSearchResponse {

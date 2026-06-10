@@ -243,20 +243,24 @@ export const timeline = [
 
 export const howItWorks = [
   {
-    title: '1. Live ingest',
-    text: 'Courtroom events stream into a structured transcript, with timestamps and role tags for every speaker.',
+    title: '1. Prompt intake',
+    text: 'Public prompts, Twitch ideas, operator entries, and generated fallback cases enter a moderated queue before they become sessions.',
   },
   {
-    title: '2. Evidence hub',
-    text: 'Each exhibit gets a card: source, confidence, admissibility state, and the note that matters on replay.',
+    title: '2. Case generation',
+    text: 'The system builds a case file with roles, genre notes, witness material, evidence cards, and enough structure for the court to stay coherent.',
   },
   {
-    title: '3. Jury visibility',
-    text: 'Jury state is summarized with readable labels, not color alone, so the panel still makes sense at a glance.',
+    title: '3. Live proceedings',
+    text: 'Agents argue through courtroom phases while the overlay streams turns, objections, evidence reveals, social signals, and phase changes.',
   },
   {
-    title: '4. Broadcast output',
-    text: 'The overlay arranges transcript, status, and the bottom jury strip into a clean 16:9 on-air composition.',
+    title: '4. Jury + ruling',
+    text: 'Votes and court state build toward a final ruling. When the session reaches final_ruling, the public UI shows the actual outcome instead of an internal phase label.',
+  },
+  {
+    title: '5. Public archive',
+    text: 'Completed sessions become searchable transcripts with the case prompt, turns, timestamps, speaker roles, and outcome preserved for replay.',
   },
 ];
 

@@ -86,6 +86,11 @@ type TranscriptSearchResult = {
   startedAt?: string;
   completedAt?: string;
   turnCount: number;
+  finalRuling?: {
+    verdict: string;
+    sentence: string;
+    decidedAt: string;
+  };
 };
 
 type TranscriptSearchResponse = {
@@ -252,6 +257,7 @@ function normalizeTranscriptSearchResponse(raw: unknown): TranscriptSearchRespon
       startedAt: readString(item.startedAt),
       completedAt: readString(item.completedAt),
       turnCount: readNumber(item.turnCount) ?? 0,
+      finalRuling: normalizeFinalRuling(item.finalRuling),
     });
   }
   return { query, results, count };
@@ -392,7 +398,50 @@ function normalizeTwitchSocialSnapshot(raw: unknown): TwitchSocialSnapshot {
 function prettyLabel(value?: string) {
   const label = value?.trim();
   if (!label) return '—';
-  return label.charAt(0).toUpperCase() + label.slice(1);
+  return label.replaceAll('_', ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function normalizeFinalRuling(raw: unknown): TranscriptSearchResult['finalRuling'] {
+  if (!isRecord(raw)) return undefined;
+  const verdict = readString(raw.verdict);
+  const sentence = readString(raw.sentence);
+  if (!verdict && !sentence) return undefined;
+  return {
+    verdict: verdict ?? '',
+    sentence: sentence ?? '',
+    decidedAt: readString(raw.decidedAt) ?? '',
+  };
+}
+
+function rulingOutcomeLabel(finalRuling?: TranscriptSearchResult['finalRuling']) {
+  if (!finalRuling) return '';
+  const verdict = prettyLabel(finalRuling.verdict);
+  const sentence = prettyLabel(finalRuling.sentence);
+  return sentence && sentence !== '—' ? `${verdict} · ${sentence}` : verdict;
+}
+
+function phaseOrOutcomeLabel(item: Pick<TranscriptSearchResult, 'phase' | 'finalRuling'>) {
+  return item.phase === 'final_ruling' && item.finalRuling ? rulingOutcomeLabel(item.finalRuling) : prettyLabel(item.phase);
+}
+
+function statusTone(status?: string) {
+  switch (status) {
+    case 'completed': return 'confirm';
+    case 'failed': return 'alert';
+    case 'running': return 'pulse';
+    case 'pending': return 'caution';
+    default: return 'ink-mute';
+  }
+}
+
+function StatusPill({ status }: { status: string }) {
+  const tone = statusTone(status);
+  return (
+    <span className="inline-flex items-center gap-1 border px-1.5 py-0.5 text-2xs uppercase tracking-[0.12em]" style={{ borderColor: `hsl(var(--${tone}))`, color: `hsl(var(--${tone}))`, background: `hsl(var(--${tone}) / 0.08)` }}>
+      <span className="size-1.5" style={{ background: `hsl(var(--${tone}))` }} aria-hidden="true" />
+      {prettyLabel(status)}
+    </span>
+  );
 }
 
 function formatOverlayTimestamp(iso?: string) {
@@ -996,6 +1045,19 @@ function App() {
           <AboutView />
         </section>
       </main>
+      <footer className="border-t border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-4 py-5">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 text-2xs text-[hsl(var(--ink-mute))] sm:flex-row sm:items-center">
+          <div>
+            <p className="font-semibold uppercase tracking-[0.16em] text-[hsl(var(--signal))]">JURYRIGGED</p>
+            <p>Live AI courtroom broadcasts, public prompts, searchable transcripts, and operator tooling.</p>
+          </div>
+          <div className="flex flex-wrap gap-2 sm:ml-auto">
+            <a href="/app/?view=submit" className="border border-[hsl(var(--pulse)/0.55)] px-2 py-1 text-[hsl(var(--pulse))] hover:bg-[hsl(var(--pulse)/0.12)]">Submit</a>
+            <a href="/app/?view=transcripts" className="border border-[hsl(var(--signal)/0.55)] px-2 py-1 text-[hsl(var(--signal))] hover:bg-[hsl(var(--signal)/0.12)]">Transcripts</a>
+            <a href="/operator" className="border border-[hsl(var(--caution)/0.55)] px-2 py-1 text-[hsl(var(--caution))] hover:bg-[hsl(var(--caution)/0.12)]">Operator</a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
@@ -1005,7 +1067,8 @@ function App() {
 // ══════════════════════════════════════════════
 function DashboardView() {
   const { snapshot: caseQueue } = useCaseQueue();
-  const { social } = useTwitchSocial();
+  const { session: liveSession, connected, error: liveError, lastUpdatedAt, lastEvent } = useLiveOverlaySession();
+  const { social } = useTwitchSocial(lastEvent);
   const [sessions, setSessions] = useState<TranscriptSearchResult[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const now = useNowTick(30_000);
@@ -1035,6 +1098,7 @@ function DashboardView() {
             startedAt: readString(s.startedAt),
             completedAt: readString(s.completedAt),
             turnCount: readNumber(s.turnCount) ?? 0,
+            finalRuling: normalizeFinalRuling((s.metadata as ApiRecord | undefined)?.finalRuling ?? s.finalRuling),
           });
         }
         setSessions(mapped);
@@ -1046,25 +1110,58 @@ function DashboardView() {
 
   const running = sessions.find(s => s.status === 'running');
   const recent = sessions.filter(s => s.status !== 'running').slice(0, 10);
+  const activeTopic = liveSession?.topic ?? running?.topic;
+  const activePrompt = liveSession?.metadata.casePrompt ?? running?.casePrompt;
+  const activePhase = liveSession?.phase ?? running?.phase ?? '';
+  const activeTurnCount = liveSession?.turnCount ?? running?.turnCount ?? 0;
+  const activeStartedAt = liveSession?.startedAt ?? running?.startedAt;
+  const activeCaseType = liveSession?.metadata.caseType ?? running?.caseType;
+  const recentLiveTurns = liveSession?.turns.slice(-4) ?? [];
+  const evidenceCount = liveSession?.metadata.evidenceCards.length ?? 0;
+  const objectionCount = liveSession?.metadata.objectionCount ?? 0;
+  const verdictVotes = liveSession ? Object.entries(liveSession.metadata.verdictVotes).sort((a, b) => b[1] - a[1]).slice(0, 3) : [];
+  const runtime = activeStartedAt ? formatDuration(activeStartedAt, now) : '—';
 
   return (
     <div className="space-y-6">
       {/* LIVE SESSION — prominent callout */}
-      {running ? (
-        <ConsolePanel className="p-5 border-[hsl(var(--pulse))]">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <HudSection label={`LIVE COURT · ${prettyLabel(running.phase)}`} note={running.status.toUpperCase()} />
-              <p className="mt-2 text-xl font-bold text-[hsl(var(--ink))]">{running.topic}</p>
-              <p className="mt-1 text-sm text-[hsl(var(--ink-dim))] line-clamp-2">{running.casePrompt}</p>
-              <div className="mt-3 flex flex-wrap gap-4 text-2xs">
-                <HudRow label="Turns" value={String(running.turnCount)} />
-                <HudRow label="Started" value={running.startedAt ? formatDuration(running.startedAt, Date.now()) : '—'} accent="caution" />
-                <HudRow label="Queue" value={caseQueue ? `${caseQueue.queuedCount} waiting` : '—'} />
+      {activeTopic ? (
+        <ConsolePanel className="overflow-hidden border-[hsl(var(--pulse))] bg-gradient-to-br from-[hsl(var(--pulse)/0.14)] via-[hsl(var(--panel))] to-[hsl(var(--signal)/0.12)]">
+          <div className="grid gap-0 lg:grid-cols-[1.2fr_0.8fr]">
+            <div className="p-5">
+              <div className="flex items-center gap-2">
+                <StatusLed state={connected ? 'live' : 'sync'} />
+                <HudSection label={`Live court · ${prettyLabel(activePhase)}`} note={connected ? 'SSE live' : liveError ?? 'Polling'} />
+              </div>
+              <p className="mt-2 text-2xl font-extrabold text-[hsl(var(--ink))]">{activeTopic}</p>
+              <p className="mt-1 text-sm text-[hsl(var(--ink-dim))] line-clamp-2">{activePrompt}</p>
+              <div className="mt-4 grid gap-2 sm:grid-cols-4">
+                <div className="border border-[hsl(var(--pulse)/0.5)] bg-[hsl(var(--pulse)/0.08)] p-3"><HudRow label="Turns" value={String(activeTurnCount)} accent="pulse" /></div>
+                <div className="border border-[hsl(var(--caution)/0.5)] bg-[hsl(var(--caution)/0.08)] p-3"><HudRow label="Length" value={runtime} accent="caution" /></div>
+                <div className="border border-[hsl(var(--signal)/0.5)] bg-[hsl(var(--signal)/0.08)] p-3"><HudRow label="Evidence" value={`${evidenceCount} cards`} accent="signal" /></div>
+                <div className="border border-[hsl(var(--alert)/0.45)] bg-[hsl(var(--alert)/0.08)] p-3"><HudRow label="Objections" value={String(objectionCount)} accent={objectionCount > 0 ? 'alert' : undefined} /></div>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <a href="/app/?view=overlay" className="border border-[hsl(var(--pulse))] bg-[hsl(var(--pulse)/0.12)] px-3 py-1.5 text-xs text-[hsl(var(--pulse))] text-center hover:bg-[hsl(var(--pulse)/0.22)]">WATCH OVERLAY</a>
+                <a href="/app/?view=transcripts" className="border border-[hsl(var(--signal))] bg-[hsl(var(--signal)/0.1)] px-3 py-1.5 text-xs text-[hsl(var(--signal))] hover:bg-[hsl(var(--signal)/0.2)]">BROWSE RECORDS</a>
+                <a href="/app/?view=submit" className="border border-[hsl(var(--caution))] bg-[hsl(var(--caution)/0.1)] px-3 py-1.5 text-xs text-[hsl(var(--caution))] hover:bg-[hsl(var(--caution)/0.2)]">SUBMIT CASE</a>
               </div>
             </div>
-            <div className="flex flex-col gap-2 shrink-0">
-              <a href="/app/?view=overlay" className="border border-[hsl(var(--pulse))] px-3 py-1.5 text-xs text-[hsl(var(--pulse))] text-center hover:bg-[hsl(var(--pulse)/0.1)]">WATCH OVERLAY</a>
+            <div className="border-t border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800)/0.72)] p-4 lg:border-l lg:border-t-0">
+              <HudSection label="Live feed" note={lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleTimeString() : activeCaseType ? prettyLabel(activeCaseType) : undefined} />
+              <div className="space-y-2">
+                {recentLiveTurns.length > 0 ? recentLiveTurns.map((turn) => (
+                  <div key={turn.id} className="border-l-2 pl-3" style={{ borderColor: roleColor(roleTone(turn.role)) }}>
+                    <p className="text-2xs uppercase tracking-[0.1em] text-[hsl(var(--ink-mute))]">#{turn.turnNumber} · {prettyLabel(turn.role)}</p>
+                    <p className="text-xs text-[hsl(var(--ink))] line-clamp-2">{turn.dialogue}</p>
+                  </div>
+                )) : <p className="text-2xs text-[hsl(var(--ink-mute))]">Live transcript attaches here when the stream is active.</p>}
+              </div>
+              {verdictVotes.length > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-1">
+                  {verdictVotes.map(([label, count]) => <span key={label} className="border border-[hsl(var(--confirm))] px-1.5 py-0.5 text-2xs text-[hsl(var(--confirm))]">{prettyLabel(label)} {count}</span>)}
+                </div>
+              ) : null}
             </div>
           </div>
         </ConsolePanel>
@@ -1101,11 +1198,11 @@ function DashboardView() {
                     <p className="text-xs font-semibold text-[hsl(var(--ink))] truncate">{s.topic}</p>
                     <p className="text-2xs text-[hsl(var(--ink-dim))] line-clamp-1">{s.casePrompt ?? s.id}</p>
                   </div>
-                  <span className="text-2xs uppercase tracking-[0.1em] text-[hsl(var(--ink-mute))] shrink-0">{s.status}</span>
+                  <StatusPill status={s.status} />
                 </div>
                 <div className="mt-1 flex gap-3 text-2xs text-[hsl(var(--ink-mute))]">
                   <span>{s.turnCount} turns</span>
-                  <span>{s.phase}</span>
+                  <span className={s.phase === 'final_ruling' && s.finalRuling ? 'text-[hsl(var(--confirm))]' : undefined}>{phaseOrOutcomeLabel(s)}</span>
                   <span>{source}</span>
                   {dateLabel ? <span>{new Date(dateLabel).toLocaleString()}</span> : null}
                 </div>
@@ -1203,7 +1300,12 @@ function TranscriptsView() {
     window.history.pushState({}, '', url);
   };
 
-  const clearTranscript = () => { setSelectedTranscriptId(''); setSelectedSession(null); };
+  const clearTranscript = () => {
+    setSelectedTranscriptId(''); setSelectedSession(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('case');
+    window.history.pushState({}, '', url);
+  };
 
   const detailTurns = useMemo(() => selectedSession?.turns ?? [], [selectedSession]);
 
@@ -1232,71 +1334,80 @@ function TranscriptsView() {
       }
     });
     return filtered;
-  }, [results, sortBy, statusFilter]);
+  }, [results, sortBy, statusFilter, dateFrom, dateTo]);
+
+  const selectedResult = sortedResults.find((result) => result.id === selectedTranscriptId) ?? results.find((result) => result.id === selectedTranscriptId);
+  const selectedOutcome = rulingOutcomeLabel(selectedSession?.metadata.finalRuling ?? selectedResult?.finalRuling);
+  const sidebar = (
+    <ConsolePanel className="p-4 flex flex-col min-h-0 xl:max-h-[78vh]">
+      <HudSection label={selectedTranscriptId ? 'Case index' : 'Search records'} note={selectedTranscriptId ? `${sortedResults.length} records` : undefined} />
+      <form className="mt-3 space-y-2" onSubmit={(e) => { e.preventDefault(); setSubmittedQuery(query.trim()); }}>
+        <input
+          value={query} onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by topic or prompt..."
+          className="w-full border border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-3 py-1.5 text-xs text-[hsl(var(--ink))] outline-none placeholder:text-[hsl(var(--ink-mute))] focus:border-[hsl(var(--pulse))]"
+        />
+        <div className="flex gap-2">
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+            className="flex-1 border border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-2 py-1.5 text-2xs text-[hsl(var(--ink))] uppercase">
+            <option value="date_desc">Newest</option>
+            <option value="date_asc">Oldest</option>
+            <option value="turns_desc">Most turns</option>
+            <option value="turns_asc">Fewest turns</option>
+            <option value="topic_asc">Topic A-Z</option>
+          </select>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+            className="flex-1 border border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-2 py-1.5 text-2xs text-[hsl(var(--ink))] uppercase">
+            <option value="all">All</option>
+            <option value="completed">Completed</option>
+            <option value="running">Running</option>
+            <option value="pending">Pending</option>
+            <option value="failed">Failed</option>
+          </select>
+        </div>
+        <div className="flex gap-2">
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+            className="flex-1 border border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-2 py-1.5 text-2xs text-[hsl(var(--ink))] uppercase"
+            aria-label="Date from"
+          />
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+            className="flex-1 border border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-2 py-1.5 text-2xs text-[hsl(var(--ink))] uppercase"
+            aria-label="Date to"
+          />
+        </div>
+        <button type="submit" className="w-full border border-[hsl(var(--pulse))] bg-[hsl(var(--pulse)/0.1)] px-3 py-1.5 text-xs text-[hsl(var(--pulse))] hover:bg-[hsl(var(--pulse)/0.2)]">
+          SEARCH
+        </button>
+      </form>
+      <div className="mt-3 flex-1 overflow-y-auto space-y-1 pr-1">
+        {searchLoading ? (
+          <p className="text-2xs text-[hsl(var(--ink-mute))]">Scanning...</p>
+        ) : sortedResults.length > 0 ? sortedResults.map((result) => (
+          <button
+            key={result.id} type="button" onClick={() => selectTranscript(result.id)}
+            className={cn('w-full border p-2 text-left transition hover:border-[hsl(var(--pulse))]', selectedTranscriptId === result.id ? 'border-[hsl(var(--pulse))] bg-[hsl(var(--pulse)/0.1)]' : 'border-[hsl(var(--border-faint))]')}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <p className="min-w-0 text-2xs uppercase tracking-[0.1em] text-[hsl(var(--ink-mute))]">{phaseOrOutcomeLabel(result)}{result.caseType ? ` · ${prettyLabel(result.caseType)}` : ''}</p>
+              <StatusPill status={result.status} />
+            </div>
+            <p className="text-xs font-semibold text-[hsl(var(--ink))] truncate">{result.topic}</p>
+            <p className="text-2xs text-[hsl(var(--ink-dim))] line-clamp-1">{result.casePrompt ?? result.id}</p>
+            <p className="text-2xs text-[hsl(var(--caution))]">{result.turnCount} turns{result.completedAt ? ` · ${new Date(result.completedAt).toLocaleDateString()}` : result.startedAt ? ` · started ${new Date(result.startedAt).toLocaleDateString()}` : ''}</p>
+          </button>
+        )) : (
+          <p className="text-2xs text-[hsl(var(--ink-mute))]">{submittedQuery ? 'No results.' : `Enter a query. ${sortedResults.length !== results.length ? 'Filter active.' : ''}`}</p>
+        )}
+      </div>
+      {error ? <p className="mt-2 text-2xs text-[hsl(var(--alert))]">{error}</p> : null}
+    </ConsolePanel>
+  );
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[320px_1fr]">
-      <ConsolePanel className="p-4 flex flex-col min-h-0">
-        <HudSection label="Search records" />
-        <form className="mt-3 space-y-2" onSubmit={(e) => { e.preventDefault(); setSubmittedQuery(query.trim()); }}>
-          <input
-            value={query} onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by topic or prompt..."
-            className="w-full border border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-3 py-1.5 text-xs text-[hsl(var(--ink))] outline-none placeholder:text-[hsl(var(--ink-mute))] focus:border-[hsl(var(--pulse))]"
-          />
-          <div className="flex gap-2">
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-              className="flex-1 border border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-2 py-1.5 text-2xs text-[hsl(var(--ink))] uppercase">
-              <option value="date_desc">Newest</option>
-              <option value="date_asc">Oldest</option>
-              <option value="turns_desc">Most turns</option>
-              <option value="turns_asc">Fewest turns</option>
-              <option value="topic_asc">Topic A-Z</option>
-            </select>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
-              className="flex-1 border border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-2 py-1.5 text-2xs text-[hsl(var(--ink))] uppercase">
-              <option value="all">All</option>
-              <option value="completed">Completed</option>
-              <option value="running">Running</option>
-              <option value="pending">Pending</option>
-              <option value="failed">Failed</option>
-            </select>
-          </div>
-          <div className="flex gap-2">
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-              className="flex-1 border border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-2 py-1.5 text-2xs text-[hsl(var(--ink))] uppercase"
-              aria-label="Date from"
-            />
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-              className="flex-1 border border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-2 py-1.5 text-2xs text-[hsl(var(--ink))] uppercase"
-              aria-label="Date to"
-            />
-          </div>
-          <button type="submit" className="w-full border border-[hsl(var(--pulse))] bg-[hsl(var(--pulse)/0.1)] px-3 py-1.5 text-xs text-[hsl(var(--pulse))] hover:bg-[hsl(var(--pulse)/0.2)]">
-            SEARCH
-          </button>
-        </form>
-        <div className="mt-3 flex-1 overflow-y-auto space-y-1">
-          {searchLoading ? (
-            <p className="text-2xs text-[hsl(var(--ink-mute))]">Scanning...</p>
-          ) : sortedResults.length > 0 ? sortedResults.map((result) => (
-            <button
-              key={result.id} type="button" onClick={() => selectTranscript(result.id)}
-              className={cn('w-full border p-2 text-left transition hover:border-[hsl(var(--pulse))]', selectedTranscriptId === result.id ? 'border-[hsl(var(--pulse))] bg-[hsl(var(--panel-raised))]' : 'border-[hsl(var(--border-faint))]')}
-            >
-              <p className="text-2xs uppercase tracking-[0.1em] text-[hsl(var(--ink-mute))]">{result.status} · {result.phase}{result.caseType ? ` · ${result.caseType}` : ''}</p>
-              <p className="text-xs font-semibold text-[hsl(var(--ink))] truncate">{result.topic}</p>
-              <p className="text-2xs text-[hsl(var(--ink-dim))] line-clamp-1">{result.casePrompt ?? result.id}</p>
-              <p className="text-2xs text-[hsl(var(--caution))]">{result.turnCount} turns{result.completedAt ? ` · completed ${new Date(result.completedAt).toLocaleDateString()}` : result.startedAt ? ` · started ${new Date(result.startedAt).toLocaleDateString()}` : ''}</p>
-            </button>
-          )) : (
-            <p className="text-2xs text-[hsl(var(--ink-mute))]">{submittedQuery ? 'No results.' : `Enter a query. ${sortedResults.length !== results.length ? 'Filter active.' : ''}`}</p>
-          )}
-        </div>
-        {error ? <p className="mt-2 text-2xs text-[hsl(var(--alert))]">{error}</p> : null}
-      </ConsolePanel>
+    <div className={cn('grid gap-4', selectedTranscriptId ? 'xl:grid-cols-[minmax(0,1fr)_320px]' : 'xl:grid-cols-[360px_minmax(0,1fr)]')}>
+      {!selectedTranscriptId ? sidebar : null}
 
-      <ConsolePanel className="p-4 flex flex-col min-h-0">
+      <ConsolePanel className="p-4 flex flex-col min-h-[70vh] xl:max-h-[78vh]">
         {detailLoading ? (
           <div className="flex items-center justify-center h-full text-xs text-[hsl(var(--ink-mute))]">
             <span className="hud-cursor">LOADING TRANSCRIPT</span>
@@ -1307,11 +1418,15 @@ function TranscriptsView() {
               <div className="min-w-0">
                 <p className="text-2xs uppercase tracking-[0.1em] text-[hsl(var(--ink-mute))]">TRANSCRIPT</p>
                 <p className="text-sm font-bold text-[hsl(var(--ink))] truncate">{selectedSession.topic}</p>
-                <p className="text-2xs text-[hsl(var(--ink-dim))]">{selectedSession.status} · {prettyLabel(selectedSession.phase)} · {selectedSession.turnCount} turns</p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <StatusPill status={selectedSession.status} />
+                  <span className="text-2xs text-[hsl(var(--ink-dim))]">{selectedOutcome || prettyLabel(selectedSession.phase)} · {selectedSession.turnCount} turns</span>
+                </div>
               </div>
               <button type="button" onClick={clearTranscript} className="border border-[hsl(var(--border-faint))] px-2 py-0.5 text-2xs text-[hsl(var(--ink-mute))] hover:border-[hsl(var(--pulse))]">CLEAR</button>
             </div>
-            <div className="mt-3 flex-1 overflow-y-auto" role="log" aria-live="polite">
+            {selectedOutcome ? <div className="mt-3 border border-[hsl(var(--confirm)/0.45)] bg-[hsl(var(--confirm)/0.08)] p-3 text-xs text-[hsl(var(--confirm))]">Outcome: {selectedOutcome}</div> : null}
+            <div className="mt-3 flex-1 overflow-y-auto pr-1" role="log" aria-live="polite">
               <div className="space-y-1">
                 {detailTurns.map((turn, index) => {
                   const tone = roleTone(turn.role);
@@ -1338,6 +1453,7 @@ function TranscriptsView() {
           </div>
         )}
       </ConsolePanel>
+      {selectedTranscriptId ? sidebar : null}
     </div>
   );
 }
@@ -1348,6 +1464,7 @@ function TranscriptsView() {
 function SubmitView() {
   const { snapshot, error: queueError } = useCaseQueue();
   const [prompt, setPrompt] = useState('');
+  const [pastPrompts, setPastPrompts] = useState<string[]>([]);
   const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
   const turnstileWidgetIdRef = useRef<string | undefined>(undefined);
   const [turnstileToken, setTurnstileToken] = useState('');
@@ -1359,6 +1476,33 @@ function SubmitView() {
   const streamUrl = queuedItems.find(item => item.streamUrl)?.streamUrl ?? '/app/?view=overlay';
   const transcriptsUrl = queuedItems.find(item => item.transcriptsUrl)?.transcriptsUrl ?? '/app/?view=transcripts';
   const usesTurnstile = Boolean(TURNSTILE_SITE_KEY);
+  const suggestionPrompts = useMemo(() => {
+    const fallback = [
+      'A startup founder is accused of training an AI model on haunted deposition transcripts, and the witnesses keep predicting objections before they happen.',
+      'A neighborhood HOA brings charges after someone replaces every lawn flamingo with a signed legal affidavit and a tiny surveillance camera.',
+      'A magician sues a rival for stealing a disappearing-act patent, but the only evidence is a rabbit that refuses to testify.',
+      'A delivery drone is put on trial for rerouting every package to the same mysterious rooftop garden during a thunderstorm.',
+      'A time traveler contests a parking ticket issued tomorrow, claiming the meter was guilty of entrapment.',
+    ];
+    const fromQueue = queuedItems.map((item) => item.prompt);
+    return [...fromQueue, ...pastPrompts, ...fallback]
+      .map((item) => item.trim())
+      .filter((item, index, array) => item.length >= 10 && array.indexOf(item) === index)
+      .slice(0, 5);
+  }, [queuedItems, pastPrompts]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const response = await fetch('/api/public/transcripts', { signal: controller.signal });
+        if (!response.ok) return;
+        const payload = normalizeTranscriptSearchResponse(await response.json());
+        setPastPrompts(payload?.results.map((result) => result.casePrompt ?? result.topic).filter(Boolean).slice(0, 8) ?? []);
+      } catch { /* ignore inspiration failures */ }
+    })();
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     if (!TURNSTILE_SITE_KEY || !turnstileContainerRef.current) return undefined;
@@ -1425,22 +1569,19 @@ function SubmitView() {
             <span>{prompt.trim().length}/500</span>
             <span>{usesTurnstile ? 'Turnstile · rate limited' : 'Nonce · rate limited'}</span>
           </div>
-          <div className="flex flex-wrap gap-1">
-            {[
-              'The accused replaced all jury chairs with whoopee cushions.',
-              'The defendant claims their cat wrote the confession letter.',
-              'A key witness insists they saw the suspect riding a unicycle.',
-              'The prosecutor alleges the evidence was swapped for candy.',
-              'The court stenographer was actually two raccoons in a trench coat.',
-            ].map((example) => (
+          <div>
+            <p className="mb-1 text-2xs uppercase tracking-[0.12em] text-[hsl(var(--signal))]">Use a recent case as inspiration</p>
+            <div className="flex flex-wrap gap-1">
+            {suggestionPrompts.map((example) => (
               <button
                 key={example} type="button"
                 onClick={() => setPrompt(example)}
-                className="border border-[hsl(var(--border-faint))] px-2 py-1 text-2xs text-[hsl(var(--ink-dim))] hover:border-[hsl(var(--pulse))] hover:text-[hsl(var(--ink))]"
+                className="border border-[hsl(var(--signal)/0.55)] bg-[hsl(var(--signal)/0.08)] px-2 py-1 text-2xs text-[hsl(var(--ink-dim))] hover:border-[hsl(var(--pulse))] hover:bg-[hsl(var(--pulse)/0.12)] hover:text-[hsl(var(--ink))]"
               >
                 {example}
               </button>
             ))}
+            </div>
           </div>
           {usesTurnstile ? <div ref={turnstileContainerRef} className="min-h-[65px]" /> : null}
           <button
@@ -1490,22 +1631,59 @@ function SubmitView() {
 // ABOUT VIEW
 // ══════════════════════════════════════════════
 function AboutView() {
+  const stats = [
+    { label: 'What it is', value: 'A live courtroom generator where prompts become staged cases, debates, rulings, and transcripts.' },
+    { label: 'Who it serves', value: 'Viewers, chat participants, operators, and anyone catching up through the public record.' },
+    { label: 'What stays public', value: 'Case topics, prompts, phases, turns, outcomes, and completed transcripts.' },
+  ];
   return (
-    <div className="grid gap-4 xl:grid-cols-2">
-      <ConsolePanel className="p-4">
-        <HudSection label="How it works" />
-        <div className="mt-3 space-y-3">
+    <div className="space-y-4">
+      <ConsolePanel className="overflow-hidden border-[hsl(var(--signal)/0.55)] bg-gradient-to-r from-[hsl(var(--signal)/0.14)] via-[hsl(var(--panel))] to-[hsl(var(--pulse)/0.12)] p-5">
+        <p className="text-2xs uppercase tracking-[0.18em] text-[hsl(var(--signal))]">About the court</p>
+        <h1 className="mt-2 text-2xl font-extrabold text-[hsl(var(--ink))]">A broadcast-first AI courtroom with receipts.</h1>
+        <p className="mt-3 max-w-3xl text-sm text-[hsl(var(--ink-dim))]">
+          JuryRigged turns audience prompts into structured courtroom sessions: roles are assigned, evidence is revealed, objections are tracked, votes accumulate, and the final outcome is saved as a readable transcript.
+        </p>
+      </ConsolePanel>
+
+      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <ConsolePanel className="p-4">
+          <HudSection label="How it works" />
+          <div className="mt-3 space-y-3">
           {howItWorks.map((item) => (
             <div key={item.title} className="border-l-2 border-[hsl(var(--pulse))] pl-3">
               <p className="text-xs font-semibold text-[hsl(var(--ink))]">{item.title}</p>
               <p className="mt-1 text-2xs text-[hsl(var(--ink-dim))]">{item.text}</p>
             </div>
           ))}
+          </div>
+        </ConsolePanel>
+        <div className="space-y-4">
+          <ConsolePanel className="p-4">
+            <HudSection label="System map" />
+            <div className="mt-3 grid gap-2">
+              {stats.map((item, index) => (
+                <div key={item.label} className="border border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] p-3">
+                  <p className={cn('text-2xs uppercase tracking-[0.12em]', index === 0 ? 'text-[hsl(var(--pulse))]' : index === 1 ? 'text-[hsl(var(--signal))]' : 'text-[hsl(var(--caution))]')}>{item.label}</p>
+                  <p className="mt-1 text-xs text-[hsl(var(--ink-dim))]">{item.value}</p>
+                </div>
+              ))}
+            </div>
+          </ConsolePanel>
+          <ConsolePanel className="p-4">
+            <HudSection label="Where to go" />
+            <div className="mt-3 grid gap-2 text-xs">
+              <a href="/app/?view=dashboard" className="border border-[hsl(var(--pulse)/0.5)] p-3 text-[hsl(var(--pulse))] hover:bg-[hsl(var(--pulse)/0.1)]">Dashboard: live status, queue, social signals, and recent sessions.</a>
+              <a href="/app/?view=transcripts" className="border border-[hsl(var(--confirm)/0.5)] p-3 text-[hsl(var(--confirm))] hover:bg-[hsl(var(--confirm)/0.1)]">Transcripts: search completed cases and read the full record.</a>
+              <a href="/app/?view=submit" className="border border-[hsl(var(--caution)/0.5)] p-3 text-[hsl(var(--caution))] hover:bg-[hsl(var(--caution)/0.1)]">Submit Prompt: add a new case idea to the public queue.</a>
+            </div>
+          </ConsolePanel>
         </div>
-      </ConsolePanel>
+      </div>
+
       <ConsolePanel className="p-4">
         <HudSection label="Accessibility" />
-        <div className="mt-3 space-y-2 text-2xs text-[hsl(var(--ink-dim))]">
+        <div className="mt-3 grid gap-2 text-2xs text-[hsl(var(--ink-dim))] md:grid-cols-4">
           <p className="hud-prompt">Transcript log uses role=log and aria-live for assistive tech.</p>
           <p className="hud-prompt">All state indicators include text labels — never color alone.</p>
           <p className="hud-prompt">Focus states are keyboard-friendly with high-contrast rings.</p>

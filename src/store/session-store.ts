@@ -126,6 +126,7 @@ function mapSessionToTranscriptSearchResult(
         phase: session.phase,
         caseType: session.metadata.caseType,
         casePrompt: session.metadata.casePrompt,
+        finalRuling: session.metadata.finalRuling,
         createdAt: session.createdAt,
         startedAt: session.startedAt,
         completedAt: session.completedAt,
