@@ -54,11 +54,11 @@ export type VoteOption = {
 };
 
 export const views: Array<{ key: ViewKey; label: string; note: string }> = [
-  { key: 'dashboard', label: 'Dashboard', note: 'Command center + live data' },
-  { key: 'overlay', label: 'Overlay', note: '16:9 broadcast frame' },
-  { key: 'transcripts', label: 'Transcripts', note: 'Search public case records' },
-  { key: 'submit', label: 'Submit Prompt', note: 'Public queue + ETA' },
-  { key: 'about', label: 'About', note: 'How the system works' },
+  { key: 'dashboard', label: 'Dashboard', note: '' },
+  { key: 'overlay', label: 'Broadcast', note: '' },
+  { key: 'transcripts', label: 'Transcripts', note: '' },
+  { key: 'submit', label: 'Submit Prompt', note: '' },
+  { key: 'about', label: 'About', note: '' },
 ];
 
 export const cases: CaseItem[] = [

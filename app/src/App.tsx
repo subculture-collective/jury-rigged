@@ -201,7 +201,11 @@ function syncViewToUrl(view: ViewKey) {
   } else {
     url.searchParams.set(VIEW_PARAM, view);
   }
+  if (view !== 'transcripts') {
+    url.searchParams.delete('case');
+  }
   window.history.pushState({}, '', url);
+  window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
 function getCaseParam() {
@@ -215,6 +219,18 @@ function navigateToTranscript(id: string) {
   url.searchParams.set('case', id);
   window.history.pushState({}, '', url);
   window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
+function MetricCard({ label, value, tone = 'ink' }: { label: string; value: string; tone?: string }) {
+  return (
+    <div
+      className="min-w-0 border bg-[hsl(var(--void-800))] p-3"
+      style={{ borderColor: `hsl(var(--${tone}) / 0.5)` }}
+    >
+      <p className="text-2xs uppercase tracking-[0.12em] text-[hsl(var(--ink-mute))]">{label}</p>
+      <p className="mt-1 break-words text-lg font-bold leading-tight" style={{ color: `hsl(var(--${tone}))` }}>{value}</p>
+    </div>
+  );
 }
 
 // ── Type guards ──
@@ -981,7 +997,7 @@ function OverlayView() {
 function App() {
   const [activeView, setActiveView] = useState<ViewKey>(getInitialView);
   const setView = useCallback((view: ViewKey) => { setActiveView(view); syncViewToUrl(view); }, []);
-  const navigableViews = useMemo(() => views.filter(v => v.key !== 'overlay'), []);
+  const navigableViews = useMemo(() => views, []);
 
   const handleViewKeyDown = useCallback((event: KeyboardEvent<HTMLButtonElement>, currentView: ViewKey) => {
     if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft' && event.key !== 'Home' && event.key !== 'End') return;
@@ -1004,14 +1020,14 @@ function App() {
   if (activeView === 'overlay') return <OverlayView />;
 
   return (
-    <div className="min-h-screen bg-[hsl(var(--void))] text-[hsl(var(--ink))] font-body">
-      <header className="sticky top-0 z-20 border-b border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-4 py-3">
-        <div className="max-w-7xl mx-auto flex items-center gap-4">
+    <div className="flex min-h-screen flex-col overflow-x-hidden bg-[hsl(var(--void))] font-body text-[hsl(var(--ink))]">
+      <header className="sticky top-0 z-20 shrink-0 border-b border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-4 py-3">
+        <div className="mx-auto flex max-w-7xl items-center gap-4">
           <span className="text-sm font-bold text-[hsl(var(--signal))]">JURYRIGGED</span>
           <span className="text-2xs text-[hsl(var(--ink-mute))]">v0.1</span>
           <StatusLed state="sync" />
           <span className="text-2xs text-[hsl(var(--ink-dim))]">{liveMeta.mode}</span>
-          <nav className="ml-auto flex gap-1" aria-label="View navigation" role="tablist">
+          <nav className="ml-auto flex max-w-full gap-1 overflow-x-auto" aria-label="View navigation" role="tablist">
             {navigableViews.map((view) => (
               <TabButton
                 key={view.key}
@@ -1031,21 +1047,21 @@ function App() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-6">
-        <section id="view-panel-dashboard" role="tabpanel" aria-labelledby="view-tab-dashboard" hidden={activeView !== 'dashboard'}>
+      <main className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col px-4 py-6">
+        <section className="min-w-0 flex-1 min-h-0" id="view-panel-dashboard" role="tabpanel" aria-labelledby="view-tab-dashboard" hidden={activeView !== 'dashboard'}>
           <DashboardView />
         </section>
-        <section id="view-panel-transcripts" role="tabpanel" aria-labelledby="view-tab-transcripts" hidden={activeView !== 'transcripts'}>
+        <section className="min-w-0 flex-1 min-h-0" id="view-panel-transcripts" role="tabpanel" aria-labelledby="view-tab-transcripts" hidden={activeView !== 'transcripts'}>
           <TranscriptsView />
         </section>
-        <section id="view-panel-submit" role="tabpanel" aria-labelledby="view-tab-submit" hidden={activeView !== 'submit'}>
+        <section className="min-w-0 flex-1 min-h-0" id="view-panel-submit" role="tabpanel" aria-labelledby="view-tab-submit" hidden={activeView !== 'submit'}>
           <SubmitView />
         </section>
-        <section id="view-panel-about" role="tabpanel" aria-labelledby="view-tab-about" hidden={activeView !== 'about'}>
+        <section className="min-w-0 flex-1 min-h-0" id="view-panel-about" role="tabpanel" aria-labelledby="view-tab-about" hidden={activeView !== 'about'}>
           <AboutView />
         </section>
       </main>
-      <footer className="border-t border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-4 py-5">
+      <footer className="shrink-0 border-t border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] px-4 py-5">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 text-2xs text-[hsl(var(--ink-mute))] sm:flex-row sm:items-center">
           <div>
             <p className="font-semibold uppercase tracking-[0.16em] text-[hsl(var(--signal))]">JURYRIGGED</p>
@@ -1071,7 +1087,14 @@ function DashboardView() {
   const { social } = useTwitchSocial(lastEvent);
   const [sessions, setSessions] = useState<TranscriptSearchResult[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
+  const liveFeedRef = useRef<HTMLDivElement | null>(null);
   const now = useNowTick(30_000);
+
+  useEffect(() => {
+    const node = liveFeedRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [liveSession?.id, liveSession?.turns.length]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1123,23 +1146,23 @@ function DashboardView() {
   const runtime = activeStartedAt ? formatDuration(activeStartedAt, now) : '—';
 
   return (
-    <div className="space-y-6">
+    <div className="flex min-h-full flex-col gap-6">
       {/* LIVE SESSION — prominent callout */}
       {activeTopic ? (
-        <ConsolePanel className="overflow-hidden border-[hsl(var(--pulse))] bg-gradient-to-br from-[hsl(var(--pulse)/0.14)] via-[hsl(var(--panel))] to-[hsl(var(--signal)/0.12)]">
-          <div className="grid gap-0 lg:grid-cols-[1.2fr_0.8fr]">
-            <div className="p-5">
-              <div className="flex items-center gap-2">
+        <ConsolePanel className="overflow-hidden border-[hsl(var(--pulse))] bg-[hsl(var(--panel))]">
+          <div className="grid gap-0 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+            <div className="min-w-0 p-5">
+              <div className="flex items-start gap-2">
                 <StatusLed state={connected ? 'live' : 'sync'} />
                 <HudSection label={`Live court · ${prettyLabel(activePhase)}`} note={connected ? 'SSE live' : liveError ?? 'Polling'} />
               </div>
               <p className="mt-2 text-2xl font-extrabold text-[hsl(var(--ink))]">{activeTopic}</p>
               <p className="mt-1 text-sm text-[hsl(var(--ink-dim))] line-clamp-2">{activePrompt}</p>
-              <div className="mt-4 grid gap-2 sm:grid-cols-4">
-                <div className="border border-[hsl(var(--pulse)/0.5)] bg-[hsl(var(--pulse)/0.08)] p-3"><HudRow label="Turns" value={String(activeTurnCount)} accent="pulse" /></div>
-                <div className="border border-[hsl(var(--caution)/0.5)] bg-[hsl(var(--caution)/0.08)] p-3"><HudRow label="Length" value={runtime} accent="caution" /></div>
-                <div className="border border-[hsl(var(--signal)/0.5)] bg-[hsl(var(--signal)/0.08)] p-3"><HudRow label="Evidence" value={`${evidenceCount} cards`} accent="signal" /></div>
-                <div className="border border-[hsl(var(--alert)/0.45)] bg-[hsl(var(--alert)/0.08)] p-3"><HudRow label="Objections" value={String(objectionCount)} accent={objectionCount > 0 ? 'alert' : undefined} /></div>
+              <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                <MetricCard label="Turns" value={String(activeTurnCount)} tone="pulse" />
+                <MetricCard label="Length" value={runtime} tone="caution" />
+                <MetricCard label="Evidence" value={`${evidenceCount} cards`} tone="signal" />
+                <MetricCard label="Objections" value={String(objectionCount)} tone={objectionCount > 0 ? 'alert' : 'ink-mute'} />
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <a href="/app/?view=overlay" className="border border-[hsl(var(--pulse))] bg-[hsl(var(--pulse)/0.12)] px-3 py-1.5 text-xs text-[hsl(var(--pulse))] text-center hover:bg-[hsl(var(--pulse)/0.22)]">WATCH OVERLAY</a>
@@ -1147,9 +1170,9 @@ function DashboardView() {
                 <a href="/app/?view=submit" className="border border-[hsl(var(--caution))] bg-[hsl(var(--caution)/0.1)] px-3 py-1.5 text-xs text-[hsl(var(--caution))] hover:bg-[hsl(var(--caution)/0.2)]">SUBMIT CASE</a>
               </div>
             </div>
-            <div className="border-t border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800)/0.72)] p-4 lg:border-l lg:border-t-0">
+            <div className="min-w-0 border-t border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] p-4 xl:border-l xl:border-t-0 xl:flex xl:flex-col">
               <HudSection label="Live feed" note={lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleTimeString() : activeCaseType ? prettyLabel(activeCaseType) : undefined} />
-              <div className="space-y-2">
+              <div ref={liveFeedRef} className="max-h-64 space-y-2 overflow-y-auto pr-1" role="log" aria-live="polite">
                 {recentLiveTurns.length > 0 ? recentLiveTurns.map((turn) => (
                   <div key={turn.id} className="border-l-2 pl-3" style={{ borderColor: roleColor(roleTone(turn.role)) }}>
                     <p className="text-2xs uppercase tracking-[0.1em] text-[hsl(var(--ink-mute))]">#{turn.turnNumber} · {prettyLabel(turn.role)}</p>
@@ -1178,25 +1201,29 @@ function DashboardView() {
         </ConsolePanel>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-6 xl:grid-cols-3">
         {/* Recent sessions */}
-        <ConsolePanel className="lg:col-span-2 p-4">
+        <ConsolePanel className="min-w-0 p-4 xl:col-span-2">
           <HudSection label={`Recent sessions · ${sessions.length} total`} note={sessionsLoading ? 'Loading...' : ''} />
           <div className="mt-3 space-y-1">
             {recent.length > 0 ? recent.map((s) => {
               const dateLabel = s.completedAt ?? s.startedAt ?? s.createdAt;
               const source = s.caseType ? prettyLabel(s.caseType) : '—';
+              const transcriptHref = `/app/?view=transcripts&case=${encodeURIComponent(s.id)}`;
               return (
-              <button
+              <a
                 key={s.id}
-                type="button"
-                onClick={() => { navigateToTranscript(s.id); }}
-                className="block w-full border border-[hsl(var(--border-faint))] hover:border-[hsl(var(--pulse))] px-3 py-2 transition text-left"
+                href={transcriptHref}
+                onClick={(event) => {
+                  event.preventDefault();
+                  navigateToTranscript(s.id);
+                }}
+                className="block w-full border border-[hsl(var(--border-faint))] px-3 py-2 text-left transition hover:border-[hsl(var(--pulse))]"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold text-[hsl(var(--ink))] truncate">{s.topic}</p>
-                    <p className="text-2xs text-[hsl(var(--ink-dim))] line-clamp-1">{s.casePrompt ?? s.id}</p>
+                    <p className="truncate text-xs font-semibold text-[hsl(var(--ink))]">{s.topic}</p>
+                    <p className="line-clamp-1 text-2xs text-[hsl(var(--ink-dim))]">{s.casePrompt ?? s.id}</p>
                   </div>
                   <StatusPill status={s.status} />
                 </div>
@@ -1206,7 +1233,7 @@ function DashboardView() {
                   <span>{source}</span>
                   {dateLabel ? <span>{new Date(dateLabel).toLocaleString()}</span> : null}
                 </div>
-              </button>
+              </a>
               );
             }) : (
               <p className="text-xs text-[hsl(var(--ink-mute))]">{sessionsLoading ? 'Loading sessions...' : 'No sessions recorded yet.'}</p>
@@ -1215,7 +1242,7 @@ function DashboardView() {
         </ConsolePanel>
 
         {/* Sidebar */}
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           <ConsolePanel className="p-4">
             <HudSection label="System" />
             <div className="space-y-0.5 mt-2">
@@ -1256,6 +1283,7 @@ function TranscriptsView() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const detailScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1292,12 +1320,23 @@ function TranscriptsView() {
     return () => controller.abort();
   }, [selectedTranscriptId]);
 
+  useEffect(() => {
+    const syncCaseFromUrl = () => setSelectedTranscriptId(getCaseParam());
+    window.addEventListener('popstate', syncCaseFromUrl);
+    return () => window.removeEventListener('popstate', syncCaseFromUrl);
+  }, []);
+
+  useEffect(() => {
+    detailScrollRef.current?.scrollTo({ top: 0 });
+  }, [selectedTranscriptId, selectedSession?.id]);
+
   const selectTranscript = (id: string) => {
     setSelectedTranscriptId(id);
     const url = new URL(window.location.href);
     url.searchParams.set(VIEW_PARAM, 'transcripts');
     url.searchParams.set('case', id);
     window.history.pushState({}, '', url);
+    window.dispatchEvent(new PopStateEvent('popstate'));
   };
 
   const clearTranscript = () => {
@@ -1305,6 +1344,7 @@ function TranscriptsView() {
     const url = new URL(window.location.href);
     url.searchParams.delete('case');
     window.history.pushState({}, '', url);
+    window.dispatchEvent(new PopStateEvent('popstate'));
   };
 
   const detailTurns = useMemo(() => selectedSession?.turns ?? [], [selectedSession]);
@@ -1339,7 +1379,7 @@ function TranscriptsView() {
   const selectedResult = sortedResults.find((result) => result.id === selectedTranscriptId) ?? results.find((result) => result.id === selectedTranscriptId);
   const selectedOutcome = rulingOutcomeLabel(selectedSession?.metadata.finalRuling ?? selectedResult?.finalRuling);
   const sidebar = (
-    <ConsolePanel className="p-4 flex flex-col min-h-0 xl:max-h-[78vh]">
+    <ConsolePanel className="flex min-w-0 flex-col p-4 min-h-0 xl:max-h-[78vh]">
       <HudSection label={selectedTranscriptId ? 'Case index' : 'Search records'} note={selectedTranscriptId ? `${sortedResults.length} records` : undefined} />
       <form className="mt-3 space-y-2" onSubmit={(e) => { e.preventDefault(); setSubmittedQuery(query.trim()); }}>
         <input
@@ -1379,7 +1419,7 @@ function TranscriptsView() {
           SEARCH
         </button>
       </form>
-      <div className="mt-3 flex-1 overflow-y-auto space-y-1 pr-1">
+      <div className="mt-3 flex-1 space-y-1 overflow-y-auto pr-1">
         {searchLoading ? (
           <p className="text-2xs text-[hsl(var(--ink-mute))]">Scanning...</p>
         ) : sortedResults.length > 0 ? sortedResults.map((result) => (
@@ -1404,10 +1444,10 @@ function TranscriptsView() {
   );
 
   return (
-    <div className={cn('grid gap-4', selectedTranscriptId ? 'xl:grid-cols-[minmax(0,1fr)_320px]' : 'xl:grid-cols-[360px_minmax(0,1fr)]')}>
+    <div className={cn('grid min-w-0 gap-4', selectedTranscriptId ? 'xl:grid-cols-[minmax(0,1fr)_320px]' : 'xl:grid-cols-[360px_minmax(0,1fr)]')}>
       {!selectedTranscriptId ? sidebar : null}
 
-      <ConsolePanel className="p-4 flex flex-col min-h-[70vh] xl:max-h-[78vh]">
+      <ConsolePanel className={cn('flex min-w-0 flex-col overflow-hidden p-4', selectedTranscriptId ? 'min-h-[70vh] max-h-[72vh]' : 'min-h-56')}>
         {detailLoading ? (
           <div className="flex items-center justify-center h-full text-xs text-[hsl(var(--ink-mute))]">
             <span className="hud-cursor">LOADING TRANSCRIPT</span>
@@ -1426,7 +1466,7 @@ function TranscriptsView() {
               <button type="button" onClick={clearTranscript} className="border border-[hsl(var(--border-faint))] px-2 py-0.5 text-2xs text-[hsl(var(--ink-mute))] hover:border-[hsl(var(--pulse))]">CLEAR</button>
             </div>
             {selectedOutcome ? <div className="mt-3 border border-[hsl(var(--confirm)/0.45)] bg-[hsl(var(--confirm)/0.08)] p-3 text-xs text-[hsl(var(--confirm))]">Outcome: {selectedOutcome}</div> : null}
-            <div className="mt-3 flex-1 overflow-y-auto pr-1" role="log" aria-live="polite">
+            <div ref={detailScrollRef} className="mt-3 flex-1 min-h-0 overflow-y-auto pr-1" role="log" aria-live="polite">
               <div className="space-y-1">
                 {detailTurns.map((turn, index) => {
                   const tone = roleTone(turn.role);
@@ -1448,7 +1488,7 @@ function TranscriptsView() {
             </div>
           </div>
         ) : (
-          <div className="flex items-center justify-center h-full text-xs text-[hsl(var(--ink-mute))]">
+          <div className="flex min-h-[12rem] items-center justify-center text-xs text-[hsl(var(--ink-mute))]">
             Select a transcript to view the full session record.
           </div>
         )}
@@ -1555,8 +1595,8 @@ function SubmitView() {
   };
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
-      <ConsolePanel className="p-4">
+    <div className="grid min-h-full gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <ConsolePanel className="min-w-0 p-4">
         <HudSection label="Submit prompt" note="Queue only — session creation is admin-only." />
         <form className="mt-3 space-y-3" onSubmit={submitPrompt}>
           <textarea
@@ -1601,7 +1641,7 @@ function SubmitView() {
         {error ? <p className="mt-3 text-2xs text-[hsl(var(--alert))]">{error}</p> : null}
       </ConsolePanel>
 
-      <div className="space-y-4">
+      <div className="min-w-0 space-y-4">
         <ConsolePanel className="p-4">
           <HudSection label="Queue status" note={queueError ?? `${snapshot?.queuedCount ?? 0} waiting`} />
           <div className="mt-2 space-y-2">
@@ -1637,8 +1677,8 @@ function AboutView() {
     { label: 'What stays public', value: 'Case topics, prompts, phases, turns, outcomes, and completed transcripts.' },
   ];
   return (
-    <div className="space-y-4">
-      <ConsolePanel className="overflow-hidden border-[hsl(var(--signal)/0.55)] bg-gradient-to-r from-[hsl(var(--signal)/0.14)] via-[hsl(var(--panel))] to-[hsl(var(--pulse)/0.12)] p-5">
+    <div className="flex min-h-full flex-col gap-4">
+      <ConsolePanel className="overflow-hidden border-[hsl(var(--signal)/0.55)] bg-[hsl(var(--panel))] p-5">
         <p className="text-2xs uppercase tracking-[0.18em] text-[hsl(var(--signal))]">About the court</p>
         <h1 className="mt-2 text-2xl font-extrabold text-[hsl(var(--ink))]">A broadcast-first AI courtroom with receipts.</h1>
         <p className="mt-3 max-w-3xl text-sm text-[hsl(var(--ink-dim))]">
@@ -1646,8 +1686,8 @@ function AboutView() {
         </p>
       </ConsolePanel>
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <ConsolePanel className="p-4">
+      <div className="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <ConsolePanel className="min-w-0 p-4">
           <HudSection label="How it works" />
           <div className="mt-3 space-y-3">
           {howItWorks.map((item) => (
@@ -1658,12 +1698,12 @@ function AboutView() {
           ))}
           </div>
         </ConsolePanel>
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <ConsolePanel className="p-4">
             <HudSection label="System map" />
             <div className="mt-3 grid gap-2">
               {stats.map((item, index) => (
-                <div key={item.label} className="border border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] p-3">
+                <div key={item.label} className="min-w-0 border border-[hsl(var(--border-faint))] bg-[hsl(var(--void-800))] p-3">
                   <p className={cn('text-2xs uppercase tracking-[0.12em]', index === 0 ? 'text-[hsl(var(--pulse))]' : index === 1 ? 'text-[hsl(var(--signal))]' : 'text-[hsl(var(--caution))]')}>{item.label}</p>
                   <p className="mt-1 text-xs text-[hsl(var(--ink-dim))]">{item.value}</p>
                 </div>

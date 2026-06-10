@@ -9,7 +9,7 @@ export function cn(...parts: Array<string | false | null | undefined>) {
 // ── Panel (console surface) ──
 export function ConsolePanel({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <div className={cn('border border-[hsl(var(--border-faint))] bg-[hsl(var(--panel))]', className)}>
+    <div className={cn('min-w-0 border border-[hsl(var(--border-faint))] bg-[hsl(var(--panel))]', className)}>
       {children}
     </div>
   );
@@ -55,14 +55,14 @@ export function TabButton({
       tabIndex={active ? 0 : -1}
       onClick={onClick} onKeyDown={onKeyDown}
       className={cn(
-        'border px-3 py-1.5 text-left transition duration-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--pulse))]',
+        'shrink-0 border px-3 py-1.5 text-left transition duration-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--pulse))]',
         active
           ? 'border-[hsl(var(--pulse))] bg-[hsl(var(--panel-raised))]'
           : 'border-[hsl(var(--border-faint))] bg-[hsl(var(--panel))] hover:border-[hsl(var(--pulse))] hover:bg-[hsl(var(--panel-raised))]',
       )}
     >
       <p className="text-xs font-semibold text-[hsl(var(--ink))]">{label}</p>
-      <p className="text-2xs text-[hsl(var(--ink-dim))]">{note}</p>
+      {note ? <p className="text-2xs text-[hsl(var(--ink-dim))]">{note}</p> : null}
     </button>
   );
 }
