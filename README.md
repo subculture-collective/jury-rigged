@@ -330,3 +330,7 @@ npm test
 - Migrations run automatically when using Postgres-backed storage.
 - When `DATABASE_URL` is not set, sessions are non-durable and not recoverable after restart.
 - On restart with Postgres, interrupted `running` sessions are recovered and resumed.
+
+## License
+
+Licensed under `GPL-3.0-or-later`. See [LICENSE](LICENSE).
